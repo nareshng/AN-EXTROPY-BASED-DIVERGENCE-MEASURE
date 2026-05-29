@@ -14,19 +14,22 @@ This repository contains the R code used in the paper:
 ## Repository structure
 
 ```text
-
-Sim_Confidence_Intervals_Exponential_dist.R
-Sim_Confidence_Intervals_Weibull_dist.R
-Sim_MSE_Estimators_Exponential_dist.R
-Sim_MSE_Estimators_Weibull_dist.R
-Sim_RelativeMSE_comparison_Exponential_dist.R
-Sim_RelativeMSE_comparison_Weibull_dist.R
-
-Censored Simulations/
-  Sim_Right_Censored_Power_Comparison.R
-
-Real Data Analysis/
-  Censored_Real_Data_Analysis.R
-  Image_based_Real_Data_Analysis.R
-  Images/
+Section 5:
+   Section 5.1:
+       Sim_RelativeMSE_comparison_Exponential_dist.R
+       Sim_RelativeMSE_comparison_Weibull_dist.R
+   Section 5.2:
+       Sim_MSE_Estimators_Exponential_dist.R
+       Sim_MSE_Estimators_Weibull_dist.R
+   Section 5.3:
+       Sim_Confidence_Intervals_Exponential_dist.R
+       Sim_Confidence_Intervals_Weibull_dist.R
+   Section 5.4:
+       Censored Simulations/
+           Sim_Right_Censored_Power_Comparison.R
+Section 6:
+   Real Data Analysis/
+       Censored_Real_Data_Analysis.R
+       Image_based_Real_Data_Analysis.R
+       Images/
 
