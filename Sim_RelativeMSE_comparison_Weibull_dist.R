@@ -1,7 +1,7 @@
 
 
 # =============================================================================
-# Section 5.1 – comparison of MSEs and Relative MSEs
+# Section 5.1 – comparison of Relative MSEs under Weibull Distribution
 # for kernel estimators of D, D_CC, and KL
 #
 # Weibull simulation version
@@ -12,16 +12,6 @@
 # Relative MSE:
 # RelMSE = MSE / true_value^2
 #
-# If true_value = 0, relative MSE is undefined and reported as NA.
-#
-# Weibull parameterization in R:
-# X ~ Weibull(shape1, scale1)
-# Y ~ Weibull(shape2, scale2)
-#
-# rweibull(n, shape = shape, scale = scale)
-#
-# Survival:
-# S(x) = exp(-(x / scale)^shape)
 # =============================================================================
 
 
@@ -101,7 +91,7 @@ calc_all_kernel <- function(
   h1 <- silverman_bw(X)
   h2 <- silverman_bw(Y)
   
-  # Keep original bandwidth rule, but avoid silent numerical nonsense.
+ 
   if (!is.finite(h1) || h1 <= 0 || !is.finite(h2) || h2 <= 0) {
     return(c(D = NA_real_, DCC = NA_real_, KL = NA_real_))
   }
@@ -114,7 +104,7 @@ calc_all_kernel <- function(
     return(c(D = NA_real_, DCC = NA_real_, KL = NA_real_))
   }
   
-  # Map Gauss-Legendre rule from [-1, 1] to [0, upper]
+
   x_grid <- 0.5 * upper * (gl$x + 1)
   w_grid <- 0.5 * upper * gl$w
   
@@ -158,18 +148,6 @@ weibull_dens <- function(x, shape, scale) {
   dweibull(x, shape = shape, scale = scale)
 }
 
-
-# -----------------------------------------------------------------------------
-# True D:
-#
-# D(F,G) = integral_0^inf [S_X(x) - S_Y(x)]^2 dx
-#
-# = integral S_X^2 dx + integral S_Y^2 dx - 2 integral S_X S_Y dx.
-#
-# The first two terms have closed form.
-# The cross term has a closed form only when the shapes are equal.
-# Otherwise it is computed numerically once per parameter setting.
-# -----------------------------------------------------------------------------
 
 true_D_weibull <- function(shape1, scale1, shape2, scale2) {
   if (shape1 <= 0 || shape2 <= 0 || scale1 <= 0 || scale2 <= 0) {
@@ -378,11 +356,7 @@ run_simulation <- function(
   
   gl <- gauss_legendre(n_quad)
   
-  # Parameter grid:
-  # c(shape1, scale1, shape2, scale2)
-  #
-  # This grid varies both shape and scale.
-  # That is important because a Weibull study that only varies scale is weak.
+
   param_grid <- list(
     c(0.5, 1.0, 1.0, 1.0),
     c(1.0, 1.0, 2.0, 1.0),
