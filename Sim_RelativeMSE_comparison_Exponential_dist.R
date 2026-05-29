@@ -1,14 +1,12 @@
 # =============================================================================
-# Section 5.1 – Efficient comparison of MSEs and Relative MSEs
+# Section 5.1 – Comparison of Relative MSEs under Exponential Distribution
 # for kernel estimators of D, D_CC, and KL
 #
-# Bandwidth is kept exactly as original:
+# Bandwidth
 # h = 0.9 * min(sd(z), IQR(z)/1.34) * n^(-0.2)
 #
 # Relative MSE:
 # RelMSE = MSE / true_value^2
-#
-# If true_value = 0, relative MSE is undefined and reported as NA.
 # =============================================================================
 
 
@@ -87,8 +85,7 @@ calc_all_kernel <- function(
   h1 <- silverman_bw(X)
   h2 <- silverman_bw(Y)
   
-  # Keep original bandwidth rule, but avoid silent numerical nonsense.
-  # For continuous exponential simulation this should almost never trigger.
+  
   if (!is.finite(h1) || h1 <= 0 || !is.finite(h2) || h2 <= 0) {
     return(c(D = NA_real_, DCC = NA_real_, KL = NA_real_))
   }
@@ -430,7 +427,7 @@ write.csv(
    iterations = 2000,
    n_quad = 300,
    tail_mult = 10,
-   seed = 2024,
+   seed = 2026,
    verbose = FALSE
  )
 
