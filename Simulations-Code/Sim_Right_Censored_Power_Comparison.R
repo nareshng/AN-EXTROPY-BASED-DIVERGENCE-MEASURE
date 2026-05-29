@@ -17,7 +17,7 @@ suppressPackageStartupMessages({
 start_time <- Sys.time()
 
 # ================================================================
-# CONFIG — edit only here
+# CONFIG 
 # ================================================================
 
 CFG <- list(
@@ -52,10 +52,10 @@ B_MC        <- CFG$B_mc
 B_PERM      <- CFG$B_perm
 ALPHA       <- CFG$alpha
 
-# Fixed method order throughout
+
 METHOD_ORDER <- c("D_KM", "DCC_KM", "KLstar_IPCW", "Log-rank_tau")
 
-# Paper-style axis labels
+
 METHOD_LABELS <- c(
   "D_KM"         = expression(hat(D)[tau]^{KM}),
   "DCC_KM"       = expression(hat(D)[tau]^{CC}),
@@ -63,7 +63,7 @@ METHOD_LABELS <- c(
   "Log-rank_tau" = expression("Log-rank"["[" * tau * "]"])
 )
 
-# Power plot colours
+
 METHOD_COLS <- c(
   "D_KM"         = "#D95F02",
   "DCC_KM"       = "#1F78B4",
@@ -71,7 +71,7 @@ METHOD_COLS <- c(
   "Log-rank_tau" = "#7B2D8B"
 )
 
-# Survival curve colours — survminer / ggsurvplot defaults
+
 SURV_COLS <- c(
   "Group 1" = "#F8766D",   # salmon
   "Group 2" = "#00BFC4"    # teal
@@ -261,7 +261,7 @@ q_pw <- function(p, le = 1, ll = 0.20, m = log(2)) {
 
 # ================================================================
 # 7. SCENARIO DEFINITIONS
-#    tau_fun = max of the two group quantiles
+#    
 # ================================================================
 
 make_scenario <- function(name) {
@@ -505,10 +505,7 @@ save_figure1 <- function() {
 
 # ================================================================
 # 12. FIGURE 2 — POWER GRID
-#     Rows    = scenarios (3)
-#     Columns = censoring levels (3)
-#     One figure per tau_q level in CFG$tau_levels
-#     Output: PNG only
+#   
 # ================================================================
 
 make_power_panel <- function(grid, scenario_name, censor_prop, tau_q) {
@@ -605,9 +602,7 @@ save_figure2 <- function(grid) {
 }
 
 # ================================================================
-# 13. FIGURE 3 — POWER VS CENSORING  (3 scenarios × 2 tau levels)
-#     Layout : rows = scenarios, cols = tau_q levels
-#     No CI bands.  Output: PNG only.
+# 13. FIGURE 3 — POWER VS CENSORING 
 # ================================================================
 
 save_figure3 <- function(grid) {
