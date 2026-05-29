@@ -1,14 +1,14 @@
 # ================================================================
-# IMAGE-BASED DIVERGENCE ANALYSIS
+# IMAGE-BASED EMPIRICAL DIVERGENCE TABLES
 #
-# Measures:
-#   1. D_emp  : empirical estimator of D
-#   2. D_grid : grid-based integral of survival-curve difference
-#   3. D_CC   : Cox--Czanner-type divergence
-#   4. KL     : kernel plug-in Kullback--Leibler divergence
+# Output:
+#   image_divergence_final_tables.csv
 #
-# Data:
-#   Grayscale image pixel intensities scaled to [0, 1]
+# Images expected:
+#   NT1.jpg, BT1.jpg, MT1.jpg
+#   NT2.jpg, BT2.jpg, MT2.jpg
+#   NT4.jpg, BT4.jpg, MT4.jpg
+#   NT5.jpg, BT5.jpg, MT5.jpg
 # ================================================================
 
 rm(list = ls())
@@ -16,7 +16,6 @@ rm(list = ls())
 suppressPackageStartupMessages({
   library(png)
   library(jpeg)
-  library(pracma)
 })
 
 # ================================================================
@@ -24,32 +23,13 @@ suppressPackageStartupMessages({
 # ================================================================
 
 CFG <- list(
-  image_dir   = "/Users/gargn2/Downloads",
-  grid_points = 512,
-  eps         = 1e-10
+  image_dir = "/Users/gargn2/Downloads",
+  out_csv   = "image_divergence_final_tables.csv",
+  digits    = 3
 )
 
-# Image files to compare
-IMAGE_FILES <- c(
-  NT5 = "NT5.jpg",
-  BT5 = "BT5.jpg",
-  MT5 = "MT5.jpg",
-  V1  = "T1.jpg",
-  V2  = "T2.jpg",
-  V3  = "T3.jpg",
-  V4  = "T4.jpg",
-  V5  = "T5.jpeg",
-  V6  = "V3.jpg"
-)
-
-# Pairwise comparisons
-COMPARISONS <- list(
-  c("V1", "V1"),
-  c("V1", "V2"),
-  c("V1", "V3"),
-  c("V1", "V4"),
-  c("V2", "V3")
-)
+GROUPS  <- c("NT", "BT", "MT")
+INDICES <- c(1, 2, 4, 5)
 
 # ================================================================
 # 2. IMAGE LOADING
@@ -79,86 +59,44 @@ load_grayscale_image <- function(path) {
   x <- as.vector(img)
   x <- x[is.finite(x)]
   
-  # Ensure intensities lie in [0, 1]
+  # Ensure pixel intensities are in [0, 1]
   x <- pmin(pmax(x, 0), 1)
   
   return(x)
 }
 
-load_image_set <- function(image_dir, image_files) {
-  
-  out <- lapply(image_files, function(fname) {
-    load_grayscale_image(file.path(image_dir, fname))
-  })
-  
-  names(out) <- names(image_files)
-  return(out)
+make_image_path <- function(group, index, image_dir) {
+  file.path(image_dir, paste0(group, index, ".jpg"))
 }
 
-# ================================================================
-# 3. BASIC ESTIMATION UTILITIES
-# ================================================================
-
-empirical_survival <- function(x, grid) {
-  vapply(grid, function(t) mean(x > t), numeric(1))
-}
-
-kernel_density_on_grid <- function(x, grid, eps = 1e-10) {
+load_image_set <- function(groups, indices, image_dir) {
   
-  dens <- density(
-    x,
-    from = min(grid),
-    to   = max(grid),
-    n    = length(grid),
-    na.rm = TRUE
-  )
+  images <- list()
   
-  fx <- approx(dens$x, dens$y, xout = grid, rule = 2)$y
-  pmax(fx, eps)
-}
-
-# ================================================================
-# 4. DIVERGENCE ESTIMATORS
-# ================================================================
-
-# ------------------------------------------------
-# 4.1 Grid-based estimator of D
-#     D = int_0^1 {S1(x) - S2(x)}^2 dx
-# ------------------------------------------------
-
-compute_D_grid <- function(x, y, grid_points = 512) {
-  
-  grid <- seq(0, 1, length.out = grid_points)
-  
-  Sx <- empirical_survival(x, grid)
-  Sy <- empirical_survival(y, grid)
-  
-  trapz(grid, (Sx - Sy)^2)
-}
-
-# ------------------------------------------------
-# 4.2 Weighted version Dw
-#     Dw = int_0^1 w(x){S1(x) - S2(x)}^2 dx
-# ------------------------------------------------
-
-compute_Dw_grid <- function(x, y, weight_fun, grid_points = 512) {
-  
-  grid <- seq(0, 1, length.out = grid_points)
-  
-  Sx <- empirical_survival(x, grid)
-  Sy <- empirical_survival(y, grid)
-  wx <- weight_fun(grid)
-  
-  if (length(wx) != length(grid)) {
-    stop("weight_fun must return a vector of the same length as grid.")
+  for (idx in indices) {
+    for (grp in groups) {
+      
+      id   <- paste0(grp, idx)
+      path <- make_image_path(grp, idx, image_dir)
+      
+      images[[id]] <- load_grayscale_image(path)
+    }
   }
   
-  trapz(grid, wx * (Sx - Sy)^2)
+  return(images)
 }
 
-# ------------------------------------------------
-# 4.3 Empirical estimator of D from equation (2.5)
-# ------------------------------------------------
+# ================================================================
+# 3. EMPIRICAL ESTIMATOR OF D
+#
+# Based on equation:
+# D_hat_Emp =
+#   (2/n1) sum_j X_(j) {S_j/n2 - j(1/n1 + 1/n2)}
+# + (2/n2) sum_j Y_(j) {R_j/n1 - j(1/n1 + 1/n2)}
+#
+# Ties are common in image data, so ties.method = "max" is used
+# to match the right-continuous empirical CDF convention.
+# ================================================================
 
 compute_D_emp <- function(x, y) {
   
@@ -172,15 +110,13 @@ compute_D_emp <- function(x, y) {
     stop("Both samples must contain at least two observations.")
   }
   
-  # Ranks in pooled sample.
-  # For continuous data ties are unlikely. For pixel data ties are common,
-  # so ties.method = 'max' gives the right-continuous empirical CDF convention.
   pooled <- c(x, y)
+  ranks  <- rank(pooled, ties.method = "max")
   
-  S <- rank(pooled, ties.method = "max")[seq_len(n1)]
-  R <- rank(pooled, ties.method = "max")[(n1 + 1):(n1 + n2)]
+  S <- ranks[seq_len(n1)]
+  R <- ranks[(n1 + 1):(n1 + n2)]
   
-  # Sort ranks according to sorted x and sorted y
+  # Reorder ranks according to sorted x and sorted y
   S <- S[order(pooled[seq_len(n1)])]
   R <- R[order(pooled[(n1 + 1):(n1 + n2)])]
   
@@ -195,82 +131,60 @@ compute_D_emp <- function(x, y) {
     y * (R / n1 - j2 * (1 / n1 + 1 / n2))
   )
   
-  D_emp <- term_x + term_y
+  D <- term_x + term_y
   
-  # Numerical/tie effects can produce tiny negative values
-  max(D_emp, 0)
-}
-
-# ------------------------------------------------
-# 4.4 Cox--Czanner-type divergence
-#     D_CC = int |S1(x) f2(x) - S2(x) f1(x)| dx
-# ------------------------------------------------
-
-compute_DCC <- function(x, y, grid_points = 512, eps = 1e-10) {
-  
-  grid <- seq(0, 1, length.out = grid_points)
-  
-  Sx <- empirical_survival(x, grid)
-  Sy <- empirical_survival(y, grid)
-  
-  fx <- kernel_density_on_grid(x, grid, eps)
-  fy <- kernel_density_on_grid(y, grid, eps)
-  
-  trapz(grid, abs(Sx * fy - Sy * fx))
-}
-
-# ------------------------------------------------
-# 4.5 KL divergence
-#     KL(f || g) = int f log(f/g)
-# ------------------------------------------------
-
-compute_KL <- function(x, y, grid_points = 512, eps = 1e-10) {
-  
-  grid <- seq(0, 1, length.out = grid_points)
-  
-  fx <- kernel_density_on_grid(x, grid, eps)
-  fy <- kernel_density_on_grid(y, grid, eps)
-  
-  trapz(grid, fx * log(fx / fy))
-}
-
-# ------------------------------------------------
-# 4.6 Symmetric KL / Jeffreys divergence
-# ------------------------------------------------
-
-compute_KL_sym <- function(x, y, grid_points = 512, eps = 1e-10) {
-  compute_KL(x, y, grid_points, eps) +
-    compute_KL(y, x, grid_points, eps)
+  # Numerical/tie effects can create tiny negative values
+  max(D, 0)
 }
 
 # ================================================================
-# 5. PAIRWISE COMPARISON WRAPPER
+# 4. CREATE 3 x 3 DIVERGENCE MATRIX FOR ONE INDEX
 # ================================================================
 
-compare_pair <- function(images, id1, id2, cfg = CFG) {
+make_divergence_matrix <- function(images, index, groups = GROUPS, digits = 3) {
   
-  x <- images[[id1]]
-  y <- images[[id2]]
+  ids <- paste0(groups, index)
   
-  data.frame(
-    Image1 = id1,
-    Image2 = id2,
-    D_emp  = compute_D_emp(x, y),
-    D_grid = compute_D_grid(x, y, cfg$grid_points),
-    D_CC   = compute_DCC(x, y, cfg$grid_points, cfg$eps),
-    KL     = compute_KL(x, y, cfg$grid_points, cfg$eps),
-    KL_sym = compute_KL_sym(x, y, cfg$grid_points, cfg$eps),
+  mat <- matrix(
+    0,
+    nrow = length(ids),
+    ncol = length(ids),
+    dimnames = list(ids, ids)
+  )
+  
+  for (i in seq_along(ids)) {
+    for (j in seq_along(ids)) {
+      
+      if (i == j) {
+        mat[i, j] <- 0
+      } else {
+        mat[i, j] <- compute_D_emp(images[[ids[i]]], images[[ids[j]]])
+      }
+    }
+  }
+  
+  round(mat, digits)
+}
+
+# ================================================================
+# 5. CONVERT MATRIX TO LONG CSV FORMAT
+# ================================================================
+
+matrix_to_long <- function(mat, index) {
+  
+  out <- expand.grid(
+    RowImage = rownames(mat),
+    ColImage = colnames(mat),
     stringsAsFactors = FALSE
   )
-}
-
-run_comparisons <- function(images, comparisons, cfg = CFG) {
   
-  out <- lapply(comparisons, function(pair) {
-    compare_pair(images, pair[1], pair[2], cfg)
-  })
+  out$Index      <- index
+  out$Comparison <- paste0(out$RowImage, "_vs_", out$ColImage)
+  out$D_emp      <- as.vector(mat)
   
-  do.call(rbind, out)
+  out <- out[, c("Index", "RowImage", "ColImage", "Comparison", "D_emp")]
+  
+  return(out)
 }
 
 # ================================================================
@@ -279,19 +193,38 @@ run_comparisons <- function(images, comparisons, cfg = CFG) {
 
 cat("\n=== Loading images ===\n")
 
-images <- load_image_set(CFG$image_dir, IMAGE_FILES)
+images <- load_image_set(
+  groups    = GROUPS,
+  indices   = INDICES,
+  image_dir = CFG$image_dir
+)
 
 cat("Loaded images:\n")
 print(names(images))
 
-cat("\n=== Running pairwise comparisons ===\n")
+cat("\n=== Computing divergence matrices ===\n")
 
-results <- run_comparisons(images, COMPARISONS, CFG)
+all_results <- list()
 
-print(results)
+for (idx in INDICES) {
+  
+  mat <- make_divergence_matrix(
+    images = images,
+    index  = idx,
+    groups = GROUPS,
+    digits = CFG$digits
+  )
+  
+  cat("\nIndex:", idx, "\n")
+  print(mat)
+  
+  all_results[[as.character(idx)]] <- matrix_to_long(mat, idx)
+}
 
-# Optional: save results
-write.csv(results, "image_divergence_results.csv", row.names = FALSE)
+final_results <- do.call(rbind, all_results)
+rownames(final_results) <- NULL
 
-cat("\nSaved: image_divergence_results.csv\n")
+write.csv(final_results, CFG$out_csv, row.names = FALSE)
+
+cat("\nSaved final CSV:", CFG$out_csv, "\n")
 cat("\n=== DONE ===\n")
