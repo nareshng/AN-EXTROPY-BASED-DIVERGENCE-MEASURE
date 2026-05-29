@@ -7,10 +7,6 @@
 #   2. Lung cancer: Male vs Female
 #   3. GBSG2 breast cancer: No hormonal therapy vs Hormonal therapy
 #
-# Outputs:
-#   - CSV table
-#   - KM curve figures
-#   - Cumulative divergence figures
 #
 # Internal event coding:
 #   status = 1 means event/death/failure
