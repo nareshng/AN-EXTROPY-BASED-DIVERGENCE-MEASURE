@@ -1,19 +1,13 @@
 
 
 # =============================================================================
-# divergence for Weibull distributions
+# Divergence for Weibull distributions
 #
 # For X ~ Weibull(shape1, scale1), Y ~ Weibull(shape2, scale2),
 #
-# # MSE and Relative MSE comparison of Kernel, Empirical, and U-statistic estimators
+# # MSE comparison of Kernel, Empirical, and U-statistic estimators
 #
-# D(F,G) = integral_0^inf [Fbar(x) - Gbar(x)]^2 dx
 #
-# Relative MSE is computed using U-statistic as baseline:
-# RelMSE_Estimator = MSE_Estimator / MSE_Ustat
-#
-# Bandwidth is kept exactly as in the original code:
-# h = 0.9 * min(sd(X), IQR(X) / 1.34) * n^(-1/5)
 # =============================================================================
 
 
