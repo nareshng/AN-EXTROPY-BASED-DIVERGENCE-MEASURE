@@ -1,5 +1,5 @@
 # ================================================================
-# RIGHT-CENSORED POWER SIMULATION
+# Section 5.4 : RIGHT-CENSORED POWER SIMULATION
 #
 # Tests     : D_KM, DCC_KM, KLstar_IPCW, restricted Log-rank
 # Scenarios : Persistent separation, Strong tail difference,
