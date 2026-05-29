@@ -1,5 +1,5 @@
 # =============================================================================
-# Section 5.3 – Efficient Coverage Probability and Average Length
+# Section 5.3 – Coverage Probability and Average Length
 # for FOUR confidence interval methods under exponential distributions:
 #
 #   1. U-statistic + JEL
@@ -11,8 +11,7 @@
 #   X ~ Exp(lambda1)
 #   Y ~ Exp(lambda2)
 #
-# Target:
-#   D(F,G) = integral_0^inf [S_X(x) - S_Y(x)]^2 dx
+#
 #
 # True value:
 #   D = 1/(2 lambda1) + 1/(2 lambda2) - 2/(lambda1 + lambda2)
@@ -239,9 +238,6 @@ jel_ci <- function(V, n1, n2, alpha = 0.05) {
     return(c(lb = NA_real_, ub = NA_real_))
   }
   
-  # ---------------------------------------------------------------------------
-  # Upper endpoint
-  # ---------------------------------------------------------------------------
   
   u_hi <- max(D_hat + step, step)
   found_hi <- FALSE
@@ -270,12 +266,7 @@ jel_ci <- function(V, n1, n2, alpha = 0.05) {
       error = function(e) NA_real_
     )
   }
-  
-  # ---------------------------------------------------------------------------
-  # Lower endpoint
-  # D is nonnegative.
-  # If 0 is inside the JEL confidence set, use 0.
-  # ---------------------------------------------------------------------------
+
   
   val_zero <- neg2llr(0, V, n1, n2)
   
@@ -476,9 +467,8 @@ all_CIs <- function(
   sc <- shared_components(X, Y)
   loo <- loo_estimates(sc)
   
-  # ---------------------------------------------------------------------------
+  
   # Pseudo-values
-  # ---------------------------------------------------------------------------
   
   # U-statistic pseudo-values for JEL
   V_JEL_X <- n * sc$D_Ustat - (n - 1) * loo$D_Ustat_loo_X
@@ -493,9 +483,8 @@ all_CIs <- function(
   V_Emp_X <- n1 * sc$D_Emp - (n1 - 1) * loo$D_Emp_loo_X
   V_Emp_Y <- n2 * sc$D_Emp - (n2 - 1) * loo$D_Emp_loo_Y
   
-  # ---------------------------------------------------------------------------
+  
   # CI 1: U-statistic + JEL
-  # ---------------------------------------------------------------------------
   
   ci_JEL <- jel_ci(V_JEL, n1, n2, alpha)
   
@@ -833,12 +822,12 @@ print_results_by_parameter <- function(results, digits_cp = 2, digits_al = 4) {
 # =============================================================================
 
 results_section_5_3_exp <- run_coverage_simulation(
-  iterations = 1000,
-  B_boot = 199,
+  iterations = 2000,
+  B_boot = 499,
   grid_size = 400,
   tail_mult = 8,
   alpha = 0.05,
-  seed = 2024,
+  seed = 2026,
   verbose = TRUE
 )
 
