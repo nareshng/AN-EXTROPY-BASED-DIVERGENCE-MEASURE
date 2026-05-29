@@ -7,11 +7,6 @@
 #
 # D(F,G) = integral_0^inf [Fbar(x) - Gbar(x)]^2 dx
 #
-# Relative MSE is computed using U-statistic as baseline:
-# RelMSE_Estimator = MSE_Estimator / MSE_Ustat
-#
-# Bandwidth is kept exactly as in the original code:
-# h = 0.9 * min(sd(X), IQR(X) / 1.34) * n^(-1/5)
 # =============================================================================
 
 
@@ -355,7 +350,7 @@ print_results_by_parameter <- function(results, digits_mse = 4, digits_rel = 4) 
 results <- run_simulation(
   iterations = 2000,
   n_quad = 80,
-  seed = 2024,
+  seed = 2026,
   verbose = TRUE
 )
 
