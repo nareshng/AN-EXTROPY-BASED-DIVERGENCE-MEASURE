@@ -11,7 +11,7 @@ Keywords: Extropy; Jackknife empirical likelihood; Measure of divergence; U stat
 This repository contains the R code used in the paper:
 
 
-## Repository structure
+## Repository:
 
 ```text
 Section 5:
