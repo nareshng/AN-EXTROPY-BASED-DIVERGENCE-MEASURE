@@ -1,5 +1,5 @@
 # =============================================================================
-# Section 5.3 – Efficient Coverage Probability and Average Length
+# Section 5.3 – Coverage Probability and Average Length
 # for FOUR confidence interval methods under Weibull distributions:
 #
 #   1. U-statistic + JEL
@@ -11,15 +11,6 @@
 #   X ~ Weibull(shape1, scale1)
 #   Y ~ Weibull(shape2, scale2)
 #
-# R parameterization:
-#   rweibull(n, shape = shape, scale = scale)
-#
-# Target:
-#   D(F,G) = integral_0^inf [S_X(x) - S_Y(x)]^2 dx
-#
-# Weibull survival:
-#   S_X(x) = exp(-(x / scale1)^shape1)
-#   S_Y(x) = exp(-(x / scale2)^shape2)
 #
 #
 # =============================================================================
@@ -855,12 +846,12 @@ print_results_by_parameter <- function(results, digits_cp = 2, digits_al = 4) {
 # =============================================================================
 
 results_section_5_3_weibull <- run_coverage_simulation(
-  iterations = 1000,
+  iterations = 2000,
   B_boot = 199,
   grid_size = 400,
   tail_mult = 8,
   alpha = 0.05,
-  seed = 2024,
+  seed = 2026,
   verbose = TRUE
 )
 
