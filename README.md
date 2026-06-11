@@ -26,7 +26,8 @@ Section 5:
        Sim_Confidence_Intervals_Weibull_dist.R
    Section 5.4:
        Censored Simulations/
-           Sim_Right_Censored_Power_Comparison.R
+           Point estimation right censoring.R
+
 Section 6:
    Real Data Analysis/
        Censored_Real_Data_Analysis.R
