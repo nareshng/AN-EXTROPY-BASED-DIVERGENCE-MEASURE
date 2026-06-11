@@ -1,6 +1,13 @@
 # =============================================================================
-# Right-censored simulation: Section 5.4
-# Relative MSE of D_tau^KM and D_CC,tau^KM
+# Right-censored simulation: Confidence intervals for D_tau
+#
+# Methods:
+#   1. Normal approximation CI for D_tau using plug-in KM variance
+#   2. Nonparametric bootstrap percentile CI for D_tau
+#
+# 
+#   CP = coverage probability at 95%
+#   AL = average length
 #
 # =============================================================================
 
@@ -16,23 +23,33 @@ if (!requireNamespace("survival", quietly = TRUE)) {
 library(survival)
 
 # =============================================================================
-# settings
+# User settings
 # =============================================================================
 
 set.seed(123)
 
-B <- 2000
+# Monte Carlo replications
+B <- 1000
 
+# Bootstrap replications inside each Monte Carlo replication
+R_boot <- 300
+
+# Nominal level
+alpha <- 0.05
+z_alpha <- qnorm(1 - alpha / 2)
+
+# Sample sizes for confidence interval study
 sample_sizes <- list(
-  c(20, 20),
-  c(50, 50),
-  c(100, 100),
-  c(200, 200)
+  c(20, 10),
+  c(30, 40),
+  c(70, 50),
+  c(100, 100)
 )
 
+# Censoring levels
 censoring_levels <- c(0.10, 0.30, 0.50)
 
-# Exponential configurations
+# Exponential configurations: Exp(rate = lambda)
 exp_configs <- list(
   E1 = c(lambda1 = 0.5,  lambda2 = 1.0),
   E2 = c(lambda1 = 1.0,  lambda2 = 2.0),
@@ -42,8 +59,7 @@ exp_configs <- list(
   E6 = c(lambda1 = 10.0, lambda2 = 5.0)
 )
 
-# Weibull configurations
-
+# Weibull configurations: Weibull(shape = k, scale = scale)
 weibull_configs <- list(
   W1 = c(k1 = 0.5, scale1 = 1.0, k2 = 1.0, scale2 = 1.0),
   W2 = c(k1 = 1.0, scale1 = 1.0, k2 = 2.0, scale2 = 1.0),
@@ -54,30 +70,21 @@ weibull_configs <- list(
 )
 
 # =============================================================================
-# functions
+# Survival functions
 # =============================================================================
 
 S_exp <- function(t, lambda) {
   exp(-lambda * t)
 }
 
-f_exp <- function(t, lambda) {
-  lambda * exp(-lambda * t)
-}
-
 S_weibull <- function(t, shape, scale) {
   exp(-(t / scale)^shape)
 }
 
-f_weibull <- function(t, shape, scale) {
-  dweibull(t, shape = shape, scale = scale)
-}
-
 # =============================================================================
-# True truncated divergence
+# True D_tau
 # =============================================================================
 
-# D_tau = integral_0^tau {S1(t) - S2(t)}^2 dt
 true_D_tau <- function(S1, S2, tau) {
   integrate(
     f = function(t) (S1(t) - S2(t))^2,
@@ -89,76 +96,64 @@ true_D_tau <- function(S1, S2, tau) {
   )$value
 }
 
-# D_CC,tau = integral_0^tau |S1(t) f2(t) - S2(t) f1(t)| dt
-true_DCC_tau <- function(S1, S2, f1, f2, tau) {
-  integrate(
-    f = function(t) abs(S1(t) * f2(t) - S2(t) * f1(t)),
+# =============================================================================
+# Censoring calibration
+# =============================================================================
+
+
+exp_censor_rate <- function(lambda, target_censoring) {
+  if (target_censoring <= 0 || target_censoring >= 1) {
+    stop("target_censoring must lie in (0,1).")
+  }
+  
+  target_censoring * lambda / (1 - target_censoring)
+}
+
+
+weibull_censor_rate <- function(shape, scale, target_censoring) {
+  if (target_censoring <= 0 || target_censoring >= 1) {
+    stop("target_censoring must lie in (0,1).")
+  }
+  
+  objective <- function(gamma) {
+    val <- integrate(
+      f = function(x) exp(-gamma * x) *
+        dweibull(x, shape = shape, scale = scale),
+      lower = 0,
+      upper = Inf,
+      subdivisions = 1000,
+      rel.tol = 1e-10,
+      abs.tol = 1e-12
+    )$value
+    
+    val - target_censoring
+  }
+  
+  upper <- 1
+  
+  while (objective(upper) > 0) {
+    upper <- 2 * upper
+    
+    if (upper > 1e6) {
+      stop("Failed to bracket Weibull censoring rate.")
+    }
+  }
+  
+  uniroot(
+    f = objective,
     lower = 0,
-    upper = tau,
-    subdivisions = 1000,
-    rel.tol = 1e-10,
-    abs.tol = 1e-12
-  )$value
-}
-
-# Closed-form D_tau
-closed_D_tau_exp <- function(lambda1, lambda2, tau) {
-  (1 - exp(-2 * lambda1 * tau)) / (2 * lambda1) +
-    (1 - exp(-2 * lambda2 * tau)) / (2 * lambda2) -
-    2 * (1 - exp(-(lambda1 + lambda2) * tau)) / (lambda1 + lambda2)
-}
-
-# Closed-form D_CC,tau
-closed_DCC_tau_exp <- function(lambda1, lambda2, tau) {
-  abs(lambda2 - lambda1) / (lambda1 + lambda2) *
-    (1 - exp(-(lambda1 + lambda2) * tau))
+    upper = upper,
+    tol = 1e-10
+  )$root
 }
 
 # =============================================================================
-# exponential case
-# =============================================================================
-
-verify_true_values <- function() {
-  lambda1 <- 0.5
-  lambda2 <- 1.0
-  
-  tau <- min(
-    qexp(0.80, rate = lambda1),
-    qexp(0.80, rate = lambda2)
-  )
-  
-  S1 <- function(t) S_exp(t, lambda1)
-  S2 <- function(t) S_exp(t, lambda2)
-  f1 <- function(t) f_exp(t, lambda1)
-  f2 <- function(t) f_exp(t, lambda2)
-  
-  num_D <- true_D_tau(S1, S2, tau)
-  cl_D  <- closed_D_tau_exp(lambda1, lambda2, tau)
-  
-  num_DCC <- true_DCC_tau(S1, S2, f1, f2, tau)
-  cl_DCC  <- closed_DCC_tau_exp(lambda1, lambda2, tau)
-  
-  cat("\n--- Verification for E1: lambda1 = 0.5, lambda2 = 1.0 ---\n")
-  cat(sprintf("tau                  = %.6f\n", tau))
-  cat(sprintf("D_tau numerical      = %.10f\n", num_D))
-  cat(sprintf("D_tau closed form    = %.10f\n", cl_D))
-  cat(sprintf("D_tau difference     = %.2e\n", abs(num_D - cl_D)))
-  cat(sprintf("D_CC,tau numerical   = %.10f\n", num_DCC))
-  cat(sprintf("D_CC,tau closed form = %.10f\n", cl_DCC))
-  cat(sprintf("D_CC,tau difference  = %.2e\n", abs(num_DCC - cl_DCC)))
-  cat("----------------------------------------------------------\n\n")
-}
-
-verify_true_values()
-
-# =============================================================================
-# Kaplan-Meier functions
+# Kaplan-Meier
 # =============================================================================
 
 km_fit_safe <- function(time, status) {
   survfit(Surv(time, status) ~ 1)
 }
-
 
 km_event_times <- function(fit, tau, include_tau_event = FALSE) {
   if (length(fit$time) == 0) {
@@ -171,7 +166,6 @@ km_event_times <- function(fit, tau, include_tau_event = FALSE) {
     sort(unique(fit$time[fit$n.event > 0 & fit$time < tau]))
   }
 }
-
 
 km_step_from_fit <- function(fit) {
   event_times <- fit$time[fit$n.event > 0]
@@ -190,35 +184,8 @@ km_step_from_fit <- function(fit) {
   }
 }
 
-
-km_linear_from_fit <- function(fit) {
-  event_times <- fit$time[fit$n.event > 0]
-  surv_values <- fit$surv[fit$n.event > 0]
-  
-  t_pts <- c(0, event_times)
-  s_pts <- c(1, surv_values)
-  
-  
-  keep <- !duplicated(t_pts)
-  t_pts <- t_pts[keep]
-  s_pts <- s_pts[keep]
-  
-  function(t) {
-    t <- as.numeric(t)
-    
-    approx(
-      x = t_pts,
-      y = s_pts,
-      xout = t,
-      method = "linear",
-      rule = 2
-    )$y
-  }
-}
-
 # =============================================================================
-# estimator: D_tau^KM
-#
+# Exact KM estimator
 # =============================================================================
 
 estimate_D_KM_tau <- function(time1, status1, time2, status2, tau) {
@@ -247,112 +214,222 @@ estimate_D_KM_tau <- function(time1, status1, time2, status2, tau) {
 }
 
 # =============================================================================
-# Cox-Czanner KM estimator
+# Integral 
 # =============================================================================
 
-estimate_DCC_KM_tau <- function(time1, status1, time2, status2, tau) {
+tail_integral_on_grid <- function(event_time, grid, left_pts, widths, integrand_values) {
+  keep <- left_pts >= event_time
+  
+  if (!any(keep)) {
+    return(0)
+  }
+  
+  sum(integrand_values[keep] * widths[keep])
+}
+
+# =============================================================================
+# Plug-in variance estimator for D_hat_tau^KM
+#
+# =============================================================================
+
+estimate_D_KM_tau_and_var <- function(time1, status1, time2, status2, tau) {
+  n1 <- length(time1)
+  n2 <- length(time2)
+  n <- n1 + n2
+  
   fit1 <- km_fit_safe(time1, status1)
   fit2 <- km_fit_safe(time2, status2)
   
-  jumps1 <- km_event_times(fit1, tau, include_tau_event = TRUE)
-  jumps2 <- km_event_times(fit2, tau, include_tau_event = TRUE)
+  jumps1 <- km_event_times(fit1, tau, include_tau_event = FALSE)
+  jumps2 <- km_event_times(fit2, tau, include_tau_event = FALSE)
   
   grid <- sort(unique(c(0, jumps1, jumps2, tau)))
   grid <- grid[grid >= 0 & grid <= tau]
   
   if (length(grid) < 2) {
-    return(0)
+    return(list(
+      D_hat = 0,
+      sigma2_hat = 0,
+      se = 0
+    ))
   }
   
-  S1_tilde <- km_linear_from_fit(fit1)
-  S2_tilde <- km_linear_from_fit(fit2)
+  S1_hat_fun <- km_step_from_fit(fit1)
+  S2_hat_fun <- km_step_from_fit(fit2)
   
-  S1_vals <- S1_tilde(grid)
-  S2_vals <- S2_tilde(grid)
+  left_pts <- grid[-length(grid)]
+  widths <- diff(grid)
   
-  m <- length(grid) - 1L
+  S1_left <- S1_hat_fun(left_pts)
+  S2_left <- S2_hat_fun(left_pts)
   
-  sum(abs(
-    S1_vals[2:(m + 1)] * S2_vals[1:m] -
-      S1_vals[1:m] * S2_vals[2:(m + 1)]
-  ))
-}
-
-# =============================================================================
-# Censoring-rate calibration
-# =============================================================================
-
-
-exp_censor_rate <- function(lambda, target_censoring) {
-  if (target_censoring <= 0 || target_censoring >= 1) {
-    stop("target_censoring must lie in (0, 1).")
-  }
+  diff_left <- S1_left - S2_left
   
-  target_censoring * lambda / (1 - target_censoring)
-}
-
-
-weibull_censor_rate <- function(shape, scale, target_censoring) {
-  if (target_censoring <= 0 || target_censoring >= 1) {
-    stop("target_censoring must lie in (0, 1).")
-  }
+  D_hat <- sum(diff_left^2 * widths)
   
-  objective <- function(gamma) {
-    val <- integrate(
-      f = function(x) exp(-gamma * x) *
-        dweibull(x, shape = shape, scale = scale),
-      lower = 0,
-      upper = Inf,
-      subdivisions = 1000,
-      rel.tol = 1e-10,
-      abs.tol = 1e-12
-    )$value
-    
-    val - target_censoring
-  }
+  # Integrands for variance formula
+  integrand_F <- diff_left * S1_left
+  integrand_G <- diff_left * S2_left
   
-  upper <- 1.0
+  # First sample event information
+  event_times1 <- fit1$time[fit1$n.event > 0 & fit1$time <= tau]
+  d1 <- fit1$n.event[fit1$n.event > 0 & fit1$time <= tau]
+  Y1 <- fit1$n.risk[fit1$n.event > 0 & fit1$time <= tau]
   
-  while (objective(upper) > 0) {
-    upper <- upper * 2
-    
-    if (upper > 1e6) {
-      stop("Failed to bracket Weibull censoring rate.")
+  sigma2_F <- 0
+  
+  if (length(event_times1) > 0) {
+    for (ell in seq_along(event_times1)) {
+      denom <- Y1[ell] * (Y1[ell] - d1[ell])
+      
+      if (is.finite(denom) && denom > 0) {
+        I_ell <- tail_integral_on_grid(
+          event_time = event_times1[ell],
+          grid = grid,
+          left_pts = left_pts,
+          widths = widths,
+          integrand_values = integrand_F
+        )
+        
+        sigma2_F <- sigma2_F + d1[ell] / denom * I_ell^2
+      }
     }
   }
   
-  uniroot(
-    f = objective,
-    lower = 0,
-    upper = upper,
-    tol = 1e-10
-  )$root
+  # Second sample event information
+  event_times2 <- fit2$time[fit2$n.event > 0 & fit2$time <= tau]
+  d2 <- fit2$n.event[fit2$n.event > 0 & fit2$time <= tau]
+  Y2 <- fit2$n.risk[fit2$n.event > 0 & fit2$time <= tau]
+  
+  sigma2_G <- 0
+  
+  if (length(event_times2) > 0) {
+    for (m in seq_along(event_times2)) {
+      denom <- Y2[m] * (Y2[m] - d2[m])
+      
+      if (is.finite(denom) && denom > 0) {
+        I_m <- tail_integral_on_grid(
+          event_time = event_times2[m],
+          grid = grid,
+          left_pts = left_pts,
+          widths = widths,
+          integrand_values = integrand_G
+        )
+        
+        sigma2_G <- sigma2_G + d2[m] / denom * I_m^2
+      }
+    }
+  }
+  
+  sigma2_hat <- (4 * n / n1) * sigma2_F + (4 * n / n2) * sigma2_G
+  
+  if (!is.finite(sigma2_hat) || sigma2_hat < 0) {
+    sigma2_hat <- NA_real_
+  }
+  
+  se <- sqrt(sigma2_hat / n)
+  
+  list(
+    D_hat = D_hat,
+    sigma2_hat = sigma2_hat,
+    se = se
+  )
 }
 
 # =============================================================================
-# Relative MSE 
+# Normal approximation CI 
 # =============================================================================
 
-calc_relMSE <- function(estimates, true_value) {
-  estimates <- estimates[is.finite(estimates)]
-  B_eff <- length(estimates)
+normal_CI_D_tau <- function(time1, status1, time2, status2, tau, alpha = 0.05) {
+  out <- estimate_D_KM_tau_and_var(time1, status1, time2, status2, tau)
   
-  if (B_eff == 0) {
-    return(NA_real_)
+  z <- qnorm(1 - alpha / 2)
+  
+  lower <- out$D_hat - z * out$se
+  upper <- out$D_hat + z * out$se
+  
+  # D_tau is nonnegative. Truncating lower endpoint is optional.
+  # I recommend not truncating for coverage simulations.
+  # lower <- max(0, lower)
+  
+  c(
+    estimate = out$D_hat,
+    lower = lower,
+    upper = upper,
+    length = upper - lower,
+    se = out$se
+  )
+}
+
+# =============================================================================
+# Bootstrap percentile CI 
+# =============================================================================
+
+bootstrap_CI_D_tau <- function(time1, status1, time2, status2,
+                               tau, R_boot = 200, alpha = 0.05) {
+  n1 <- length(time1)
+  n2 <- length(time2)
+  
+  D_boot <- numeric(R_boot)
+  
+  data1 <- data.frame(time = time1, status = status1)
+  data2 <- data.frame(time = time2, status = status2)
+  
+  for (r in seq_len(R_boot)) {
+    idx1 <- sample.int(n1, size = n1, replace = TRUE)
+    idx2 <- sample.int(n2, size = n2, replace = TRUE)
+    
+    boot1 <- data1[idx1, ]
+    boot2 <- data2[idx2, ]
+    
+    D_boot[r] <- tryCatch(
+      estimate_D_KM_tau(
+        time1 = boot1$time,
+        status1 = boot1$status,
+        time2 = boot2$time,
+        status2 = boot2$status,
+        tau = tau
+      ),
+      error = function(e) NA_real_
+    )
   }
   
-  if (!is.finite(true_value) || abs(true_value) < .Machine$double.eps) {
-    return(NA_real_)
+  D_boot <- D_boot[is.finite(D_boot)]
+  
+  D_hat <- estimate_D_KM_tau(time1, status1, time2, status2, tau)
+  
+  if (length(D_boot) < max(20, ceiling(0.5 * R_boot))) {
+    return(c(
+      estimate = D_hat,
+      lower = NA_real_,
+      upper = NA_real_,
+      length = NA_real_
+    ))
   }
   
-  sum((estimates - true_value)^2) / (B_eff * true_value^2)
+  qs <- quantile(
+    D_boot,
+    probs = c(alpha / 2, 1 - alpha / 2),
+    names = FALSE,
+    type = 8,
+    na.rm = TRUE
+  )
+  
+  c(
+    estimate = D_hat,
+    lower = qs[1],
+    upper = qs[2],
+    length = qs[2] - qs[1]
+  )
 }
 
 # =============================================================================
 # One simulation block: Exponential
 # =============================================================================
 
-run_exp_block <- function(config_id, lambda1, lambda2, n1, n2, censoring, B) {
+run_exp_CI_block <- function(config_id, lambda1, lambda2,
+                             n1, n2, censoring,
+                             B, R_boot, alpha) {
   gamma1 <- exp_censor_rate(lambda1, censoring)
   gamma2 <- exp_censor_rate(lambda2, censoring)
   
@@ -363,14 +440,15 @@ run_exp_block <- function(config_id, lambda1, lambda2, n1, n2, censoring, B) {
   
   S1 <- function(t) S_exp(t, lambda1)
   S2 <- function(t) S_exp(t, lambda2)
-  f1 <- function(t) f_exp(t, lambda1)
-  f2 <- function(t) f_exp(t, lambda2)
   
   D_tau_true <- true_D_tau(S1, S2, tau)
-  DCC_tau_true <- true_DCC_tau(S1, S2, f1, f2, tau)
   
-  D_KM_est <- numeric(B)
-  DCC_KM_est <- numeric(B)
+  cover_normal <- numeric(B)
+  length_normal <- numeric(B)
+  
+  cover_boot <- numeric(B)
+  length_boot <- numeric(B)
+  
   cens1_obs <- numeric(B)
   cens2_obs <- numeric(B)
   
@@ -390,36 +468,52 @@ run_exp_block <- function(config_id, lambda1, lambda2, n1, n2, censoring, B) {
     cens1_obs[b] <- mean(delta == 0)
     cens2_obs[b] <- mean(eta == 0)
     
-    D_KM_est[b] <- tryCatch(
-      estimate_D_KM_tau(
+    ci_normal <- tryCatch(
+      normal_CI_D_tau(
         time1 = T_obs,
         status1 = delta,
         time2 = S_obs,
         status2 = eta,
-        tau = tau
+        tau = tau,
+        alpha = alpha
       ),
-      error = function(e) NA_real_
+      error = function(e) rep(NA_real_, 5)
     )
     
-    DCC_KM_est[b] <- tryCatch(
-      estimate_DCC_KM_tau(
+    cover_normal[b] <- as.numeric(
+      is.finite(ci_normal["lower"]) &&
+        ci_normal["lower"] <= D_tau_true &&
+        ci_normal["upper"] >= D_tau_true
+    )
+    
+    length_normal[b] <- ci_normal["length"]
+    
+    ci_boot <- tryCatch(
+      bootstrap_CI_D_tau(
         time1 = T_obs,
         status1 = delta,
         time2 = S_obs,
         status2 = eta,
-        tau = tau
+        tau = tau,
+        R_boot = R_boot,
+        alpha = alpha
       ),
-      error = function(e) NA_real_
+      error = function(e) rep(NA_real_, 4)
     )
+    
+    cover_boot[b] <- as.numeric(
+      is.finite(ci_boot["lower"]) &&
+        ci_boot["lower"] <= D_tau_true &&
+        ci_boot["upper"] >= D_tau_true
+    )
+    
+    length_boot[b] <- ci_boot["length"]
   }
   
   data.frame(
     distribution = "Exponential",
     config_id = config_id,
-    config = paste0(
-      "(lambda1, lambda2) = (",
-      lambda1, ", ", lambda2, ")"
-    ),
+    config = paste0("(lambda1, lambda2) = (", lambda1, ", ", lambda2, ")"),
     n1 = n1,
     n2 = n2,
     sample_size = paste0("(", n1, ", ", n2, ")"),
@@ -429,11 +523,15 @@ run_exp_block <- function(config_id, lambda1, lambda2, n1, n2, censoring, B) {
     observed_censoring_2 = round(mean(cens2_obs), 4),
     tau = round(tau, 6),
     D_tau_true = D_tau_true,
-    DCC_tau_true = DCC_tau_true,
-    RelMSE_D_KM = calc_relMSE(D_KM_est, D_tau_true),
-    RelMSE_DCC_KM = calc_relMSE(DCC_KM_est, DCC_tau_true),
-    finite_D_KM = sum(is.finite(D_KM_est)),
-    finite_DCC_KM = sum(is.finite(DCC_KM_est)),
+    
+    CP_Normal = round(100 * mean(cover_normal, na.rm = TRUE), 2),
+    AL_Normal = round(mean(length_normal, na.rm = TRUE), 4),
+    
+    CP_Bootstrap = round(100 * mean(cover_boot, na.rm = TRUE), 2),
+    AL_Bootstrap = round(mean(length_boot, na.rm = TRUE), 4),
+    
+    valid_Normal = sum(is.finite(length_normal)),
+    valid_Bootstrap = sum(is.finite(length_boot)),
     stringsAsFactors = FALSE
   )
 }
@@ -442,8 +540,9 @@ run_exp_block <- function(config_id, lambda1, lambda2, n1, n2, censoring, B) {
 # One simulation block: Weibull
 # =============================================================================
 
-run_weibull_block <- function(config_id, k1, scale1, k2, scale2,
-                              n1, n2, censoring, B) {
+run_weibull_CI_block <- function(config_id, k1, scale1, k2, scale2,
+                                 n1, n2, censoring,
+                                 B, R_boot, alpha) {
   gamma1 <- weibull_censor_rate(k1, scale1, censoring)
   gamma2 <- weibull_censor_rate(k2, scale2, censoring)
   
@@ -454,14 +553,15 @@ run_weibull_block <- function(config_id, k1, scale1, k2, scale2,
   
   S1 <- function(t) S_weibull(t, k1, scale1)
   S2 <- function(t) S_weibull(t, k2, scale2)
-  f1 <- function(t) f_weibull(t, k1, scale1)
-  f2 <- function(t) f_weibull(t, k2, scale2)
   
   D_tau_true <- true_D_tau(S1, S2, tau)
-  DCC_tau_true <- true_DCC_tau(S1, S2, f1, f2, tau)
   
-  D_KM_est <- numeric(B)
-  DCC_KM_est <- numeric(B)
+  cover_normal <- numeric(B)
+  length_normal <- numeric(B)
+  
+  cover_boot <- numeric(B)
+  length_boot <- numeric(B)
+  
   cens1_obs <- numeric(B)
   cens2_obs <- numeric(B)
   
@@ -481,27 +581,46 @@ run_weibull_block <- function(config_id, k1, scale1, k2, scale2,
     cens1_obs[b] <- mean(delta == 0)
     cens2_obs[b] <- mean(eta == 0)
     
-    D_KM_est[b] <- tryCatch(
-      estimate_D_KM_tau(
+    ci_normal <- tryCatch(
+      normal_CI_D_tau(
         time1 = T_obs,
         status1 = delta,
         time2 = S_obs,
         status2 = eta,
-        tau = tau
+        tau = tau,
+        alpha = alpha
       ),
-      error = function(e) NA_real_
+      error = function(e) rep(NA_real_, 5)
     )
     
-    DCC_KM_est[b] <- tryCatch(
-      estimate_DCC_KM_tau(
+    cover_normal[b] <- as.numeric(
+      is.finite(ci_normal["lower"]) &&
+        ci_normal["lower"] <= D_tau_true &&
+        ci_normal["upper"] >= D_tau_true
+    )
+    
+    length_normal[b] <- ci_normal["length"]
+    
+    ci_boot <- tryCatch(
+      bootstrap_CI_D_tau(
         time1 = T_obs,
         status1 = delta,
         time2 = S_obs,
         status2 = eta,
-        tau = tau
+        tau = tau,
+        R_boot = R_boot,
+        alpha = alpha
       ),
-      error = function(e) NA_real_
+      error = function(e) rep(NA_real_, 4)
     )
+    
+    cover_boot[b] <- as.numeric(
+      is.finite(ci_boot["lower"]) &&
+        ci_boot["lower"] <= D_tau_true &&
+        ci_boot["upper"] >= D_tau_true
+    )
+    
+    length_boot[b] <- ci_boot["length"]
   }
   
   data.frame(
@@ -509,8 +628,7 @@ run_weibull_block <- function(config_id, k1, scale1, k2, scale2,
     config_id = config_id,
     config = paste0(
       "((k1, scale1), (k2, scale2)) = ((",
-      k1, ", ", scale1, "), (",
-      k2, ", ", scale2, "))"
+      k1, ", ", scale1, "), (", k2, ", ", scale2, "))"
     ),
     n1 = n1,
     n2 = n2,
@@ -521,24 +639,28 @@ run_weibull_block <- function(config_id, k1, scale1, k2, scale2,
     observed_censoring_2 = round(mean(cens2_obs), 4),
     tau = round(tau, 6),
     D_tau_true = D_tau_true,
-    DCC_tau_true = DCC_tau_true,
-    RelMSE_D_KM = calc_relMSE(D_KM_est, D_tau_true),
-    RelMSE_DCC_KM = calc_relMSE(DCC_KM_est, DCC_tau_true),
-    finite_D_KM = sum(is.finite(D_KM_est)),
-    finite_DCC_KM = sum(is.finite(DCC_KM_est)),
+    
+    CP_Normal = round(100 * mean(cover_normal, na.rm = TRUE), 2),
+    AL_Normal = round(mean(length_normal, na.rm = TRUE), 4),
+    
+    CP_Bootstrap = round(100 * mean(cover_boot, na.rm = TRUE), 2),
+    AL_Bootstrap = round(mean(length_boot, na.rm = TRUE), 4),
+    
+    valid_Normal = sum(is.finite(length_normal)),
+    valid_Bootstrap = sum(is.finite(length_boot)),
     stringsAsFactors = FALSE
   )
 }
 
 # =============================================================================
-# Run all simulations
+# Run simulations
 # =============================================================================
 
 results <- list()
 counter <- 1L
 
 cat("\n==============================================================\n")
-cat("Running exponential simulations...\n")
+cat("Running confidence-interval simulations: Exponential\n")
 cat("==============================================================\n")
 
 for (cfg_name in names(exp_configs)) {
@@ -556,14 +678,16 @@ for (cfg_name in names(exp_configs)) {
         100 * cens
       ))
       
-      results[[counter]] <- run_exp_block(
+      results[[counter]] <- run_exp_CI_block(
         config_id = cfg_name,
         lambda1 = cfg["lambda1"],
         lambda2 = cfg["lambda2"],
         n1 = nn[1],
         n2 = nn[2],
         censoring = cens,
-        B = B
+        B = B,
+        R_boot = R_boot,
+        alpha = alpha
       )
       
       counter <- counter + 1L
@@ -572,7 +696,7 @@ for (cfg_name in names(exp_configs)) {
 }
 
 cat("\n==============================================================\n")
-cat("Running Weibull simulations...\n")
+cat("Running confidence-interval simulations: Weibull\n")
 cat("==============================================================\n")
 
 for (cfg_name in names(weibull_configs)) {
@@ -592,7 +716,7 @@ for (cfg_name in names(weibull_configs)) {
         100 * cens
       ))
       
-      results[[counter]] <- run_weibull_block(
+      results[[counter]] <- run_weibull_CI_block(
         config_id = cfg_name,
         k1 = cfg["k1"],
         scale1 = cfg["scale1"],
@@ -601,7 +725,9 @@ for (cfg_name in names(weibull_configs)) {
         n1 = nn[1],
         n2 = nn[2],
         censoring = cens,
-        B = B
+        B = B,
+        R_boot = R_boot,
+        alpha = alpha
       )
       
       counter <- counter + 1L
@@ -613,10 +739,10 @@ final_results <- do.call(rbind, results)
 rownames(final_results) <- NULL
 
 # =============================================================================
-# tables
+# Tables
 # =============================================================================
 
-make_wide_table <- function(df) {
+make_wide_CI_table <- function(df) {
   df$row_id <- paste0(df$config_id, " C", round(100 * df$target_censoring), "%")
   
   all_labels <- c(
@@ -632,10 +758,10 @@ make_wide_table <- function(df) {
   row_ids <- unique(df$row_id)
   
   size_order <- c(
-    "(20, 20)",
-    "(50, 50)",
-    "(100, 100)",
-    "(200, 200)"
+    "(20, 10)",
+    "(30, 40)",
+    "(70, 50)",
+    "(100, 100)"
   )
   
   sizes <- size_order[size_order %in% unique(df$sample_size)]
@@ -647,18 +773,19 @@ make_wide_table <- function(df) {
   )
   
   for (sz in sizes) {
-    col_D <- paste0("D_KM_", sz)
-    col_DCC <- paste0("DCC_KM_", sz)
-    
-    wide[[col_D]] <- NA_real_
-    wide[[col_DCC]] <- NA_real_
+    wide[[paste0("Normal_CP_", sz)]] <- NA_real_
+    wide[[paste0("Normal_AL_", sz)]] <- NA_real_
+    wide[[paste0("Boot_CP_", sz)]] <- NA_real_
+    wide[[paste0("Boot_AL_", sz)]] <- NA_real_
     
     for (i in seq_along(row_ids)) {
       row <- df[df$row_id == row_ids[i] & df$sample_size == sz, ]
       
       if (nrow(row) == 1L) {
-        wide[[col_D]][i] <- round(row$RelMSE_D_KM, 4)
-        wide[[col_DCC]][i] <- round(row$RelMSE_DCC_KM, 4)
+        wide[[paste0("Normal_CP_", sz)]][i] <- row$CP_Normal
+        wide[[paste0("Normal_AL_", sz)]][i] <- row$AL_Normal
+        wide[[paste0("Boot_CP_", sz)]][i] <- row$CP_Bootstrap
+        wide[[paste0("Boot_AL_", sz)]][i] <- row$AL_Bootstrap
       }
     }
   }
@@ -670,24 +797,23 @@ make_wide_table <- function(df) {
 exp_results <- subset(final_results, distribution == "Exponential")
 weibull_results <- subset(final_results, distribution == "Weibull")
 
-table_A <- make_wide_table(exp_results)
-table_B <- make_wide_table(weibull_results)
+table_C_exp <- make_wide_CI_table(exp_results)
+table_D_weibull <- make_wide_CI_table(weibull_results)
 
 # =============================================================================
 # Save results
 # =============================================================================
 
 
-
 write.csv(
-  table_A,
-  "Table_A_RelMSE_Exponential.csv",
+  table_C_exp,
+  "Table_C_CI_Exponential.csv",
   row.names = FALSE
 )
 
 write.csv(
-  table_B,
-  "Table_B_RelMSE_Weibull.csv",
+  table_D_weibull,
+  "Table_D_CI_Weibull.csv",
   row.names = FALSE
 )
 
