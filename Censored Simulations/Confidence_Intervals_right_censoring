@@ -2,24 +2,23 @@
 # Right-censored simulation: Confidence intervals for D_tau
 #
 # Methods:
-#   1. Normal approximation CI for D_tau using plug-in KM variance
+#   1. Paper Section 4.3 normal CI for D_tau using Greenwood plug-in variance
 #   2. Nonparametric bootstrap percentile CI for D_tau
 #
-# 
+# Outputs:
 #   CP = coverage probability at 95%
 #   AL = average length
+#
+# Correct implementation of Section 4.3:
 #
 # =============================================================================
 
 rm(list = ls())
 
-# =============================================================================
-# Required package
-# =============================================================================
-
 if (!requireNamespace("survival", quietly = TRUE)) {
   install.packages("survival")
 }
+
 library(survival)
 
 # =============================================================================
@@ -28,17 +27,12 @@ library(survival)
 
 set.seed(123)
 
-# Monte Carlo replications
-B <- 1000
+B <- 200
 
-# Bootstrap replications inside each Monte Carlo replication
-R_boot <- 300
+R_boot <- 100
 
-# Nominal level
 alpha <- 0.05
-z_alpha <- qnorm(1 - alpha / 2)
 
-# Sample sizes for confidence interval study
 sample_sizes <- list(
   c(20, 10),
   c(30, 40),
@@ -46,10 +40,11 @@ sample_sizes <- list(
   c(100, 100)
 )
 
-# Censoring levels
 censoring_levels <- c(0.10, 0.30, 0.50)
 
-# Exponential configurations: Exp(rate = lambda)
+# Set TRUE if final paper tables should exclude (20,10)
+remove_20_10_from_tables <- TRUE
+
 exp_configs <- list(
   E1 = c(lambda1 = 0.5,  lambda2 = 1.0),
   E2 = c(lambda1 = 1.0,  lambda2 = 2.0),
@@ -59,7 +54,6 @@ exp_configs <- list(
   E6 = c(lambda1 = 10.0, lambda2 = 5.0)
 )
 
-# Weibull configurations: Weibull(shape = k, scale = scale)
 weibull_configs <- list(
   W1 = c(k1 = 0.5, scale1 = 1.0, k2 = 1.0, scale2 = 1.0),
   W2 = c(k1 = 1.0, scale1 = 1.0, k2 = 2.0, scale2 = 1.0),
@@ -70,7 +64,7 @@ weibull_configs <- list(
 )
 
 # =============================================================================
-# Survival functions
+# Survival functions and true D_tau
 # =============================================================================
 
 S_exp <- function(t, lambda) {
@@ -80,10 +74,6 @@ S_exp <- function(t, lambda) {
 S_weibull <- function(t, shape, scale) {
   exp(-(t / scale)^shape)
 }
-
-# =============================================================================
-# True D_tau
-# =============================================================================
 
 true_D_tau <- function(S1, S2, tau) {
   integrate(
@@ -100,7 +90,6 @@ true_D_tau <- function(S1, S2, tau) {
 # Censoring calibration
 # =============================================================================
 
-
 exp_censor_rate <- function(lambda, target_censoring) {
   if (target_censoring <= 0 || target_censoring >= 1) {
     stop("target_censoring must lie in (0,1).")
@@ -109,7 +98,6 @@ exp_censor_rate <- function(lambda, target_censoring) {
   target_censoring * lambda / (1 - target_censoring)
 }
 
-
 weibull_censor_rate <- function(shape, scale, target_censoring) {
   if (target_censoring <= 0 || target_censoring >= 1) {
     stop("target_censoring must lie in (0,1).")
@@ -117,8 +105,9 @@ weibull_censor_rate <- function(shape, scale, target_censoring) {
   
   objective <- function(gamma) {
     val <- integrate(
-      f = function(x) exp(-gamma * x) *
-        dweibull(x, shape = shape, scale = scale),
+      f = function(x) {
+        exp(-gamma * x) * dweibull(x, shape = shape, scale = scale)
+      },
       lower = 0,
       upper = Inf,
       subdivisions = 1000,
@@ -148,7 +137,7 @@ weibull_censor_rate <- function(shape, scale, target_censoring) {
 }
 
 # =============================================================================
-# Kaplan-Meier
+# Kaplan--Meier helpers
 # =============================================================================
 
 km_fit_safe <- function(time, status) {
@@ -185,7 +174,7 @@ km_step_from_fit <- function(fit) {
 }
 
 # =============================================================================
-# Exact KM estimator
+# Exact KM estimator of D_tau
 # =============================================================================
 
 estimate_D_KM_tau <- function(time1, status1, time2, status2, tau) {
@@ -214,10 +203,10 @@ estimate_D_KM_tau <- function(time1, status1, time2, status2, tau) {
 }
 
 # =============================================================================
-# Integral 
+# Tail integral on pooled KM grid
 # =============================================================================
 
-tail_integral_on_grid <- function(event_time, grid, left_pts, widths, integrand_values) {
+tail_integral_on_grid <- function(event_time, left_pts, widths, integrand_values) {
   keep <- left_pts >= event_time
   
   if (!any(keep)) {
@@ -228,11 +217,10 @@ tail_integral_on_grid <- function(event_time, grid, left_pts, widths, integrand_
 }
 
 # =============================================================================
-# Plug-in variance estimator for D_hat_tau^KM
-#
+# Section 4.3 plug-in variance estimator
 # =============================================================================
 
-estimate_D_KM_tau_and_var <- function(time1, status1, time2, status2, tau) {
+estimate_D_KM_tau_and_paper_var <- function(time1, status1, time2, status2, tau) {
   n1 <- length(time1)
   n2 <- length(time2)
   n <- n1 + n2
@@ -249,7 +237,12 @@ estimate_D_KM_tau_and_var <- function(time1, status1, time2, status2, tau) {
   if (length(grid) < 2) {
     return(list(
       D_hat = 0,
-      sigma2_hat = 0,
+      greenwood_F = 0,
+      greenwood_G = 0,
+      sigma2_F_asym = 0,
+      sigma2_G_asym = 0,
+      sigma2_tau = 0,
+      var_D_hat = 0,
       se = 0
     ))
   }
@@ -264,19 +257,20 @@ estimate_D_KM_tau_and_var <- function(time1, status1, time2, status2, tau) {
   S2_left <- S2_hat_fun(left_pts)
   
   diff_left <- S1_left - S2_left
-  
   D_hat <- sum(diff_left^2 * widths)
   
-  # Integrands for variance formula
   integrand_F <- diff_left * S1_left
   integrand_G <- diff_left * S2_left
   
-  # First sample event information
+  # ---------------------------------------------------------------------------
+  # First-group Greenwood
+  # ---------------------------------------------------------------------------
+  
   event_times1 <- fit1$time[fit1$n.event > 0 & fit1$time <= tau]
   d1 <- fit1$n.event[fit1$n.event > 0 & fit1$time <= tau]
   Y1 <- fit1$n.risk[fit1$n.event > 0 & fit1$time <= tau]
   
-  sigma2_F <- 0
+  greenwood_F <- 0
   
   if (length(event_times1) > 0) {
     for (ell in seq_along(event_times1)) {
@@ -285,23 +279,25 @@ estimate_D_KM_tau_and_var <- function(time1, status1, time2, status2, tau) {
       if (is.finite(denom) && denom > 0) {
         I_ell <- tail_integral_on_grid(
           event_time = event_times1[ell],
-          grid = grid,
           left_pts = left_pts,
           widths = widths,
           integrand_values = integrand_F
         )
         
-        sigma2_F <- sigma2_F + d1[ell] / denom * I_ell^2
+        greenwood_F <- greenwood_F + d1[ell] / denom * I_ell^2
       }
     }
   }
   
-  # Second sample event information
+  # ---------------------------------------------------------------------------
+  # Second-group Greenwood 
+  # ---------------------------------------------------------------------------
+  
   event_times2 <- fit2$time[fit2$n.event > 0 & fit2$time <= tau]
   d2 <- fit2$n.event[fit2$n.event > 0 & fit2$time <= tau]
   Y2 <- fit2$n.risk[fit2$n.event > 0 & fit2$time <= tau]
   
-  sigma2_G <- 0
+  greenwood_G <- 0
   
   if (length(event_times2) > 0) {
     for (m in seq_along(event_times2)) {
@@ -310,63 +306,92 @@ estimate_D_KM_tau_and_var <- function(time1, status1, time2, status2, tau) {
       if (is.finite(denom) && denom > 0) {
         I_m <- tail_integral_on_grid(
           event_time = event_times2[m],
-          grid = grid,
           left_pts = left_pts,
           widths = widths,
           integrand_values = integrand_G
         )
         
-        sigma2_G <- sigma2_G + d2[m] / denom * I_m^2
+        greenwood_G <- greenwood_G + d2[m] / denom * I_m^2
       }
     }
   }
   
-  sigma2_hat <- (4 * n / n1) * sigma2_F + (4 * n / n2) * sigma2_G
+  # ---------------------------------------------------------------------------
+  # Section 4.3 scaling
+  #
+  # ---------------------------------------------------------------------------
   
-  if (!is.finite(sigma2_hat) || sigma2_hat < 0) {
-    sigma2_hat <- NA_real_
+  sigma2_F_asym <- n1 * greenwood_F
+  sigma2_G_asym <- n2 * greenwood_G
+  
+  sigma2_tau <- (4 * n / n1) * sigma2_F_asym +
+    (4 * n / n2) * sigma2_G_asym
+  
+  if (!is.finite(sigma2_tau) || sigma2_tau < 0) {
+    sigma2_tau <- NA_real_
   }
   
-  se <- sqrt(sigma2_hat / n)
+  # Paper Section 4.3:
+  var_D_hat <- sigma2_tau / n
+  se <- sqrt(var_D_hat)
+  
+  # Equivalent:
   
   list(
     D_hat = D_hat,
-    sigma2_hat = sigma2_hat,
+    greenwood_F = greenwood_F,
+    greenwood_G = greenwood_G,
+    sigma2_F_asym = sigma2_F_asym,
+    sigma2_G_asym = sigma2_G_asym,
+    sigma2_tau = sigma2_tau,
+    var_D_hat = var_D_hat,
     se = se
   )
 }
 
 # =============================================================================
-# Normal approximation CI 
+# Paper CI for D_tau
 # =============================================================================
 
-normal_CI_D_tau <- function(time1, status1, time2, status2, tau, alpha = 0.05) {
-  out <- estimate_D_KM_tau_and_var(time1, status1, time2, status2, tau)
+paper_CI_D_tau <- function(time1, status1, time2, status2,
+                           tau, alpha = 0.05,
+                           truncate_lower = FALSE) {
+  out <- estimate_D_KM_tau_and_paper_var(
+    time1 = time1,
+    status1 = status1,
+    time2 = time2,
+    status2 = status2,
+    tau = tau
+  )
   
   z <- qnorm(1 - alpha / 2)
   
-  lower <- out$D_hat - z * out$se
+  lower_raw <- out$D_hat - z * out$se
   upper <- out$D_hat + z * out$se
   
-  # D_tau is nonnegative. Truncating lower endpoint is optional.
-  # I recommend not truncating for coverage simulations.
-  # lower <- max(0, lower)
+  lower <- lower_raw
+  
+  if (truncate_lower) {
+    lower <- max(lower_raw, 0)
+  }
   
   c(
     estimate = out$D_hat,
     lower = lower,
     upper = upper,
     length = upper - lower,
-    se = out$se
+    se = out$se,
+    lower_raw = lower_raw
   )
 }
 
 # =============================================================================
-# Bootstrap percentile CI 
+# Bootstrap percentile CI
 # =============================================================================
 
 bootstrap_CI_D_tau <- function(time1, status1, time2, status2,
-                               tau, R_boot = 200, alpha = 0.05) {
+                               tau, R_boot = 300, alpha = 0.05,
+                               truncate_lower = FALSE) {
   n1 <- length(time1)
   n2 <- length(time2)
   
@@ -415,11 +440,18 @@ bootstrap_CI_D_tau <- function(time1, status1, time2, status2,
     na.rm = TRUE
   )
   
+  lower <- qs[1]
+  upper <- qs[2]
+  
+  if (truncate_lower) {
+    lower <- max(lower, 0)
+  }
+  
   c(
     estimate = D_hat,
-    lower = qs[1],
-    upper = qs[2],
-    length = qs[2] - qs[1]
+    lower = lower,
+    upper = upper,
+    length = upper - lower
   )
 }
 
@@ -443,11 +475,11 @@ run_exp_CI_block <- function(config_id, lambda1, lambda2,
   
   D_tau_true <- true_D_tau(S1, S2, tau)
   
-  cover_normal <- numeric(B)
-  length_normal <- numeric(B)
+  cover_paper <- rep(NA_real_, B)
+  length_paper <- rep(NA_real_, B)
   
-  cover_boot <- numeric(B)
-  length_boot <- numeric(B)
+  cover_boot <- rep(NA_real_, B)
+  length_boot <- rep(NA_real_, B)
   
   cens1_obs <- numeric(B)
   cens2_obs <- numeric(B)
@@ -468,25 +500,26 @@ run_exp_CI_block <- function(config_id, lambda1, lambda2,
     cens1_obs[b] <- mean(delta == 0)
     cens2_obs[b] <- mean(eta == 0)
     
-    ci_normal <- tryCatch(
-      normal_CI_D_tau(
+    ci_paper <- tryCatch(
+      paper_CI_D_tau(
         time1 = T_obs,
         status1 = delta,
         time2 = S_obs,
         status2 = eta,
         tau = tau,
-        alpha = alpha
+        alpha = alpha,
+        truncate_lower = FALSE
       ),
-      error = function(e) rep(NA_real_, 5)
+      error = function(e) rep(NA_real_, 6)
     )
     
-    cover_normal[b] <- as.numeric(
-      is.finite(ci_normal["lower"]) &&
-        ci_normal["lower"] <= D_tau_true &&
-        ci_normal["upper"] >= D_tau_true
-    )
-    
-    length_normal[b] <- ci_normal["length"]
+    if (is.finite(ci_paper["lower"]) && is.finite(ci_paper["upper"])) {
+      cover_paper[b] <- as.numeric(
+        ci_paper["lower"] <= D_tau_true &&
+          ci_paper["upper"] >= D_tau_true
+      )
+      length_paper[b] <- ci_paper["length"]
+    }
     
     ci_boot <- tryCatch(
       bootstrap_CI_D_tau(
@@ -496,18 +529,19 @@ run_exp_CI_block <- function(config_id, lambda1, lambda2,
         status2 = eta,
         tau = tau,
         R_boot = R_boot,
-        alpha = alpha
+        alpha = alpha,
+        truncate_lower = FALSE
       ),
       error = function(e) rep(NA_real_, 4)
     )
     
-    cover_boot[b] <- as.numeric(
-      is.finite(ci_boot["lower"]) &&
+    if (is.finite(ci_boot["lower"]) && is.finite(ci_boot["upper"])) {
+      cover_boot[b] <- as.numeric(
         ci_boot["lower"] <= D_tau_true &&
-        ci_boot["upper"] >= D_tau_true
-    )
-    
-    length_boot[b] <- ci_boot["length"]
+          ci_boot["upper"] >= D_tau_true
+      )
+      length_boot[b] <- ci_boot["length"]
+    }
   }
   
   data.frame(
@@ -524,13 +558,13 @@ run_exp_CI_block <- function(config_id, lambda1, lambda2,
     tau = round(tau, 6),
     D_tau_true = D_tau_true,
     
-    CP_Normal = round(100 * mean(cover_normal, na.rm = TRUE), 2),
-    AL_Normal = round(mean(length_normal, na.rm = TRUE), 4),
+    CP_Paper = round(100 * mean(cover_paper, na.rm = TRUE), 2),
+    AL_Paper = round(mean(length_paper, na.rm = TRUE), 4),
     
     CP_Bootstrap = round(100 * mean(cover_boot, na.rm = TRUE), 2),
     AL_Bootstrap = round(mean(length_boot, na.rm = TRUE), 4),
     
-    valid_Normal = sum(is.finite(length_normal)),
+    valid_Paper = sum(is.finite(length_paper)),
     valid_Bootstrap = sum(is.finite(length_boot)),
     stringsAsFactors = FALSE
   )
@@ -556,11 +590,11 @@ run_weibull_CI_block <- function(config_id, k1, scale1, k2, scale2,
   
   D_tau_true <- true_D_tau(S1, S2, tau)
   
-  cover_normal <- numeric(B)
-  length_normal <- numeric(B)
+  cover_paper <- rep(NA_real_, B)
+  length_paper <- rep(NA_real_, B)
   
-  cover_boot <- numeric(B)
-  length_boot <- numeric(B)
+  cover_boot <- rep(NA_real_, B)
+  length_boot <- rep(NA_real_, B)
   
   cens1_obs <- numeric(B)
   cens2_obs <- numeric(B)
@@ -581,25 +615,26 @@ run_weibull_CI_block <- function(config_id, k1, scale1, k2, scale2,
     cens1_obs[b] <- mean(delta == 0)
     cens2_obs[b] <- mean(eta == 0)
     
-    ci_normal <- tryCatch(
-      normal_CI_D_tau(
+    ci_paper <- tryCatch(
+      paper_CI_D_tau(
         time1 = T_obs,
         status1 = delta,
         time2 = S_obs,
         status2 = eta,
         tau = tau,
-        alpha = alpha
+        alpha = alpha,
+        truncate_lower = FALSE
       ),
-      error = function(e) rep(NA_real_, 5)
+      error = function(e) rep(NA_real_, 6)
     )
     
-    cover_normal[b] <- as.numeric(
-      is.finite(ci_normal["lower"]) &&
-        ci_normal["lower"] <= D_tau_true &&
-        ci_normal["upper"] >= D_tau_true
-    )
-    
-    length_normal[b] <- ci_normal["length"]
+    if (is.finite(ci_paper["lower"]) && is.finite(ci_paper["upper"])) {
+      cover_paper[b] <- as.numeric(
+        ci_paper["lower"] <= D_tau_true &&
+          ci_paper["upper"] >= D_tau_true
+      )
+      length_paper[b] <- ci_paper["length"]
+    }
     
     ci_boot <- tryCatch(
       bootstrap_CI_D_tau(
@@ -609,18 +644,19 @@ run_weibull_CI_block <- function(config_id, k1, scale1, k2, scale2,
         status2 = eta,
         tau = tau,
         R_boot = R_boot,
-        alpha = alpha
+        alpha = alpha,
+        truncate_lower = FALSE
       ),
       error = function(e) rep(NA_real_, 4)
     )
     
-    cover_boot[b] <- as.numeric(
-      is.finite(ci_boot["lower"]) &&
+    if (is.finite(ci_boot["lower"]) && is.finite(ci_boot["upper"])) {
+      cover_boot[b] <- as.numeric(
         ci_boot["lower"] <= D_tau_true &&
-        ci_boot["upper"] >= D_tau_true
-    )
-    
-    length_boot[b] <- ci_boot["length"]
+          ci_boot["upper"] >= D_tau_true
+      )
+      length_boot[b] <- ci_boot["length"]
+    }
   }
   
   data.frame(
@@ -640,13 +676,13 @@ run_weibull_CI_block <- function(config_id, k1, scale1, k2, scale2,
     tau = round(tau, 6),
     D_tau_true = D_tau_true,
     
-    CP_Normal = round(100 * mean(cover_normal, na.rm = TRUE), 2),
-    AL_Normal = round(mean(length_normal, na.rm = TRUE), 4),
+    CP_Paper = round(100 * mean(cover_paper, na.rm = TRUE), 2),
+    AL_Paper = round(mean(length_paper, na.rm = TRUE), 4),
     
     CP_Bootstrap = round(100 * mean(cover_boot, na.rm = TRUE), 2),
     AL_Bootstrap = round(mean(length_boot, na.rm = TRUE), 4),
     
-    valid_Normal = sum(is.finite(length_normal)),
+    valid_Paper = sum(is.finite(length_paper)),
     valid_Bootstrap = sum(is.finite(length_boot)),
     stringsAsFactors = FALSE
   )
@@ -739,10 +775,14 @@ final_results <- do.call(rbind, results)
 rownames(final_results) <- NULL
 
 # =============================================================================
-# Tables
+# Build wide tables
 # =============================================================================
 
-make_wide_CI_table <- function(df) {
+make_wide_CI_table <- function(df, remove_20_10 = TRUE) {
+  if (remove_20_10) {
+    df <- df[df$sample_size != "(20, 10)", ]
+  }
+  
   df$row_id <- paste0(df$config_id, " C", round(100 * df$target_censoring), "%")
   
   all_labels <- c(
@@ -764,6 +804,10 @@ make_wide_CI_table <- function(df) {
     "(100, 100)"
   )
   
+  if (remove_20_10) {
+    size_order <- setdiff(size_order, "(20, 10)")
+  }
+  
   sizes <- size_order[size_order %in% unique(df$sample_size)]
   
   wide <- data.frame(
@@ -773,8 +817,8 @@ make_wide_CI_table <- function(df) {
   )
   
   for (sz in sizes) {
-    wide[[paste0("Normal_CP_", sz)]] <- NA_real_
-    wide[[paste0("Normal_AL_", sz)]] <- NA_real_
+    wide[[paste0("Paper_CP_", sz)]] <- NA_real_
+    wide[[paste0("Paper_AL_", sz)]] <- NA_real_
     wide[[paste0("Boot_CP_", sz)]] <- NA_real_
     wide[[paste0("Boot_AL_", sz)]] <- NA_real_
     
@@ -782,8 +826,8 @@ make_wide_CI_table <- function(df) {
       row <- df[df$row_id == row_ids[i] & df$sample_size == sz, ]
       
       if (nrow(row) == 1L) {
-        wide[[paste0("Normal_CP_", sz)]][i] <- row$CP_Normal
-        wide[[paste0("Normal_AL_", sz)]][i] <- row$AL_Normal
+        wide[[paste0("Paper_CP_", sz)]][i] <- row$CP_Paper
+        wide[[paste0("Paper_AL_", sz)]][i] <- row$AL_Paper
         wide[[paste0("Boot_CP_", sz)]][i] <- row$CP_Bootstrap
         wide[[paste0("Boot_AL_", sz)]][i] <- row$AL_Bootstrap
       }
@@ -797,13 +841,25 @@ make_wide_CI_table <- function(df) {
 exp_results <- subset(final_results, distribution == "Exponential")
 weibull_results <- subset(final_results, distribution == "Weibull")
 
-table_C_exp <- make_wide_CI_table(exp_results)
-table_D_weibull <- make_wide_CI_table(weibull_results)
+table_C_exp <- make_wide_CI_table(
+  exp_results,
+  remove_20_10 = remove_20_10_from_tables
+)
+
+table_D_weibull <- make_wide_CI_table(
+  weibull_results,
+  remove_20_10 = remove_20_10_from_tables
+)
 
 # =============================================================================
 # Save results
 # =============================================================================
 
+write.csv(
+  final_results,
+  "section5_4_CI_all_results_long.csv",
+  row.names = FALSE
+)
 
 write.csv(
   table_C_exp,
