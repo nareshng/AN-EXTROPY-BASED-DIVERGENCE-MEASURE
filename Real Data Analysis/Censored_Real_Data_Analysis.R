@@ -1,5 +1,6 @@
 # =============================================================================
 # Censored Real Data Analysis
+# Kaplan--Meier estimator D_tau^KM with Section 4.3 Normal CI
 # =============================================================================
 #
 # Cases:
@@ -7,10 +8,14 @@
 #   2. Lung cancer: Male vs Female
 #   3. GBSG2 breast cancer: No hormonal therapy vs Hormonal therapy
 #
-#
 # Internal event coding:
 #   status = 1 means event/death/failure
 #   status = 0 means censored
+#
+# Main outputs:
+#   D_tau^KM
+#   Normal approximation CI
+#   Log-rank p-value
 #
 # =============================================================================
 
@@ -69,7 +74,7 @@ clean_filename <- function(x) {
 
 
 # =============================================================================
-# 3. Kaplan-Meier step-function utilities
+# 3. Kaplan--Meier utilities
 # =============================================================================
 
 fit_km_one_group <- function(time, status) {
@@ -102,6 +107,7 @@ choose_tau_from_event_quantile <- function(time1, status1,
   if (length(event_times1) < 2 || length(event_times2) < 2) {
     stop("Too few events in one of the groups to choose tau.")
   }
+  
   
   tau <- max(
     as.numeric(stats::quantile(event_times1, probs = tau_q, na.rm = TRUE)),
@@ -181,7 +187,7 @@ compute_Dtau_KM_core <- function(time1, status1,
 
 
 # =============================================================================
-# 5. Greenwood plug-in variance estimator
+# 5. Greenwood plug-in variance component
 # =============================================================================
 
 greenwood_component <- function(km_event_fit,
@@ -228,15 +234,26 @@ greenwood_component <- function(km_event_fit,
 }
 
 
-compute_greenwood_CI <- function(time1, status1,
-                                 time2, status2,
-                                 tau,
-                                 alpha = 0.05) {
+# =============================================================================
+# 6. Normal approximation CI exactly following Section 4.3
+# =============================================================================
+
+compute_normal_CI_section43 <- function(time1, status1,
+                                        time2, status2,
+                                        tau,
+                                        alpha = 0.05,
+                                        truncate_lower = TRUE) {
   n1 <- length(time1)
   n2 <- length(time2)
   n <- n1 + n2
   
-  core <- compute_Dtau_KM_core(time1, status1, time2, status2, tau)
+  core <- compute_Dtau_KM_core(
+    time1 = time1,
+    status1 = status1,
+    time2 = time2,
+    status2 = status2,
+    tau = tau
+  )
   
   sigma_F_sq <- greenwood_component(
     km_event_fit = core$km1,
@@ -252,29 +269,107 @@ compute_greenwood_CI <- function(time1, status1,
     tau = tau
   )
   
+  # Section 4.3:
   sigma_tau_sq <- (4 * n / n1) * sigma_F_sq +
     (4 * n / n2) * sigma_G_sq
   
-  sigma_tau <- sqrt(max(sigma_tau_sq, 0))
+  if (!is.finite(sigma_tau_sq) || sigma_tau_sq < 0) {
+    sigma_tau_sq <- NA_real_
+  }
+  
+  sigma_tau <- sqrt(sigma_tau_sq)
+  
+  # Section 4.3 CI:
+  se_section43 <- sigma_tau / sqrt(n)
+  
   z <- stats::qnorm(1 - alpha / 2)
   
-  lower <- core$Dtau - z * sigma_tau / sqrt(n)
-  upper <- core$Dtau + z * sigma_tau / sqrt(n)
+  lower_raw <- core$Dtau - z * se_section43
+  upper <- core$Dtau + z * se_section43
+  
+  lower <- lower_raw
+  
+  if (truncate_lower) {
+    lower <- max(lower_raw, 0)
+  }
   
   list(
     Dtau = core$Dtau,
     tau = tau,
+    sigma_F_sq = sigma_F_sq,
+    sigma_G_sq = sigma_G_sq,
     sigma_tau_sq = sigma_tau_sq,
     sigma_tau = sigma_tau,
-    lower = max(lower, 0),
+    se_section43 = se_section43,
+    lower_raw = lower_raw,
+    lower = lower,
     upper = upper,
+    length = upper - lower,
     step_df = core$step_df
   )
 }
 
 
 # =============================================================================
-# 6. Analysis function for one dataset
+# 7. Bootstrap percentile CI
+# =============================================================================
+
+compute_bootstrap_CI <- function(d1, d2,
+                                 tau,
+                                 B = 1000,
+                                 alpha = 0.05) {
+  boot_vals <- numeric(B)
+  
+  for (b in seq_len(B)) {
+    b1 <- d1[sample(seq_len(nrow(d1)), size = nrow(d1), replace = TRUE), ]
+    b2 <- d2[sample(seq_len(nrow(d2)), size = nrow(d2), replace = TRUE), ]
+    
+    bcore <- tryCatch(
+      compute_Dtau_KM_core(
+        time1 = b1$time,
+        status1 = b1$status,
+        time2 = b2$time,
+        status2 = b2$status,
+        tau = tau
+      ),
+      error = function(e) NULL
+    )
+    
+    boot_vals[b] <- if (is.null(bcore)) NA_real_ else bcore$Dtau
+  }
+  
+  boot_vals <- boot_vals[is.finite(boot_vals)]
+  
+  if (length(boot_vals) < max(30, ceiling(0.5 * B))) {
+    return(list(
+      values = boot_vals,
+      se = NA_real_,
+      lower = NA_real_,
+      upper = NA_real_,
+      length = NA_real_
+    ))
+  }
+  
+  boot_ci <- stats::quantile(
+    boot_vals,
+    probs = c(alpha / 2, 1 - alpha / 2),
+    na.rm = TRUE,
+    names = FALSE,
+    type = 8
+  )
+  
+  list(
+    values = boot_vals,
+    se = stats::sd(boot_vals, na.rm = TRUE),
+    lower = boot_ci[1],
+    upper = boot_ci[2],
+    length = boot_ci[2] - boot_ci[1]
+  )
+}
+
+
+# =============================================================================
+# 8. Analysis function for one dataset
 # =============================================================================
 
 analyze_censored_dataset <- function(dat,
@@ -292,7 +387,6 @@ analyze_censored_dataset <- function(dat,
                                      alpha = 0.05,
                                      seed = 123,
                                      save_plots = TRUE) {
-  
   set.seed(seed)
   
   dat_clean <- dat %>%
@@ -314,8 +408,11 @@ analyze_censored_dataset <- function(dat,
     ) %>%
     dplyr::filter(time >= 0)
   
-  d1 <- dat_clean %>% dplyr::filter(group == group1_label)
-  d2 <- dat_clean %>% dplyr::filter(group == group2_label)
+  d1 <- dat_clean %>%
+    dplyr::filter(group == group1_label)
+  
+  d2 <- dat_clean %>%
+    dplyr::filter(group == group2_label)
   
   if (nrow(d1) < 5 || nrow(d2) < 5) {
     stop(paste(dataset_name, ": one group has too few observations."))
@@ -328,23 +425,30 @@ analyze_censored_dataset <- function(dat,
   
   if (is.null(tau)) {
     tau <- choose_tau_from_event_quantile(
-      d1$time, d1$status,
-      d2$time, d2$status,
+      time1 = d1$time,
+      status1 = d1$status,
+      time2 = d2$time,
+      status2 = d2$status,
       tau_q = tau_q
     )
   }
   
   core <- compute_Dtau_KM_core(
-    d1$time, d1$status,
-    d2$time, d2$status,
+    time1 = d1$time,
+    status1 = d1$status,
+    time2 = d2$time,
+    status2 = d2$status,
     tau = tau
   )
   
-  greenwood <- compute_greenwood_CI(
-    d1$time, d1$status,
-    d2$time, d2$status,
+  normal_ci <- compute_normal_CI_section43(
+    time1 = d1$time,
+    status1 = d1$status,
+    time2 = d2$time,
+    status2 = d2$status,
     tau = tau,
-    alpha = alpha
+    alpha = alpha,
+    truncate_lower = TRUE
   )
   
   logrank_fit <- survival::survdiff(
@@ -357,52 +461,46 @@ analyze_censored_dataset <- function(dat,
     df = length(logrank_fit$n) - 1
   )
   
-  # ---------------------------------------------------------------------------
-  # Bootstrap CI
-  # ---------------------------------------------------------------------------
-  
-  boot_vals <- numeric(B)
-  
-  for (b in seq_len(B)) {
-    b1 <- d1[sample(seq_len(nrow(d1)), size = nrow(d1), replace = TRUE), ]
-    b2 <- d2[sample(seq_len(nrow(d2)), size = nrow(d2), replace = TRUE), ]
-    
-    bcore <- compute_Dtau_KM_core(
-      b1$time, b1$status,
-      b2$time, b2$status,
-      tau = tau
-    )
-    
-    boot_vals[b] <- bcore$Dtau
-  }
-  
-  boot_ci <- stats::quantile(
-    boot_vals,
-    probs = c(alpha / 2, 1 - alpha / 2),
-    na.rm = TRUE,
-    names = FALSE
+  bootstrap <- compute_bootstrap_CI(
+    d1 = d1,
+    d2 = d2,
+    tau = tau,
+    B = B,
+    alpha = alpha
   )
-  
-  boot_se <- stats::sd(boot_vals, na.rm = TRUE)
   
   result_row <- tibble::tibble(
     Dataset = dataset_name,
     Comparison = paste0(group1_label, " vs ", group2_label),
     Group_1 = group1_label,
     Group_2 = group2_label,
+    
     n1 = nrow(d1),
     n2 = nrow(d2),
     Events_1 = sum(d1$status == 1),
     Events_2 = sum(d2$status == 1),
     Censoring_1_percent = 100 * mean(d1$status == 0),
     Censoring_2_percent = 100 * mean(d2$status == 0),
+    
     tau = tau,
     Dtau_KM = core$Dtau,
-    Bootstrap_SE = boot_se,
-    Bootstrap_CI_lower = boot_ci[1],
-    Bootstrap_CI_upper = boot_ci[2],
-    Greenwood_CI_lower = greenwood$lower,
-    Greenwood_CI_upper = greenwood$upper,
+    
+    Normal_SE = normal_ci$se_section43,
+    Normal_CI_lower_raw = normal_ci$lower_raw,
+    Normal_CI_lower = normal_ci$lower,
+    Normal_CI_upper = normal_ci$upper,
+    Normal_CI_length = normal_ci$length,
+    
+    Sigma_F_sq = normal_ci$sigma_F_sq,
+    Sigma_G_sq = normal_ci$sigma_G_sq,
+    Sigma_tau_sq = normal_ci$sigma_tau_sq,
+    Sigma_tau = normal_ci$sigma_tau,
+    
+    Bootstrap_SE = bootstrap$se,
+    Bootstrap_CI_lower = bootstrap$lower,
+    Bootstrap_CI_upper = bootstrap$upper,
+    Bootstrap_CI_length = bootstrap$length,
+    
     Logrank_p_value = logrank_p
   )
   
@@ -421,11 +519,6 @@ analyze_censored_dataset <- function(dat,
   cum_plot_file <- file.path(fig_dir, paste0(plot_base_name, "_cumulative_divergence.pdf"))
   
   if (save_plots) {
-    
-    # -------------------------------------------------------------------------
-    # Kaplan-Meier plot WITHOUT number-at-risk table
-    # -------------------------------------------------------------------------
-    
     km_fit_grouped <- survival::survfit(
       survival::Surv(time, status) ~ group,
       data = dat_clean
@@ -435,12 +528,12 @@ analyze_censored_dataset <- function(dat,
       km_fit_grouped,
       data = dat_clean,
       conf.int = TRUE,
-      risk.table = FALSE,      # removes bottom number-at-risk part
+      risk.table = FALSE,
       pval = TRUE,
       censor = TRUE,
       xlab = "Time",
       ylab = "Survival probability",
-      title = paste0(dataset_name, ": Kaplan-Meier curves"),
+      title = paste0(dataset_name, ": Kaplan--Meier curves"),
       legend.title = "Group",
       legend.labs = c(group1_label, group2_label),
       ggtheme = ggplot2::theme_bw()
@@ -449,10 +542,6 @@ analyze_censored_dataset <- function(dat,
     grDevices::pdf(km_plot_file, width = 7.2, height = 4.8)
     print(km_plot$plot)
     grDevices::dev.off()
-    
-    # -------------------------------------------------------------------------
-    # Pointwise squared survival-difference plot
-    # -------------------------------------------------------------------------
     
     diff_plot <- ggplot2::ggplot(
       step_df,
@@ -467,7 +556,9 @@ analyze_censored_dataset <- function(dat,
             widehat(D)[tau]^KM == .(round(core$Dtau, 4))
         ),
         x = "Time",
-        y = expression((widehat(bar(F))[n[1]](t) - widehat(bar(G))[n[2]](t))^2)
+        y = expression(
+          (widehat(bar(F))[n[1]](t) - widehat(bar(G))[n[2]](t))^2
+        )
       ) +
       ggplot2::theme_bw()
     
@@ -478,10 +569,6 @@ analyze_censored_dataset <- function(dat,
       height = 4.8,
       device = "pdf"
     )
-    
-    # -------------------------------------------------------------------------
-    # Cumulative divergence plot with proper tau notation
-    # -----------------------------------------------------------ƒ--------------
     
     cum_plot <- ggplot2::ggplot(
       step_df,
@@ -497,7 +584,11 @@ analyze_censored_dataset <- function(dat,
         ),
         x = "Time",
         y = expression(
-          integral((widehat(bar(F))[n[1]](u) - widehat(bar(G))[n[2]](u))^2 * du, 0, t)
+          integral(
+            (widehat(bar(F))[n[1]](u) - widehat(bar(G))[n[2]](u))^2 * du,
+            0,
+            t
+          )
         )
       ) +
       ggplot2::theme_bw()
@@ -514,7 +605,7 @@ analyze_censored_dataset <- function(dat,
   list(
     result = result_row,
     step_df = step_df,
-    boot_vals = boot_vals,
+    boot_vals = bootstrap$values,
     data = dat_clean,
     tau = tau,
     km_plot_file = km_plot_file,
@@ -525,11 +616,11 @@ analyze_censored_dataset <- function(dat,
 
 
 # =============================================================================
-# 7. Prepare datasets with correct event coding
+# 9. Prepare datasets
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# 7.1 Veteran lung cancer dataset
+# 9.1 Veteran lung cancer dataset
 # survival::veteran:
 #   status: 0 = censored, 1 = event/death
 #   trt: 1 = standard treatment, 2 = test treatment
@@ -546,7 +637,7 @@ veteran_dat <- veteran %>%
 
 
 # -----------------------------------------------------------------------------
-# 7.2 Lung cancer dataset
+# 9.2 Lung cancer dataset
 # survival::lung:
 #   status: 1 = censored, 2 = event/death
 #   sex: 1 = male, 2 = female
@@ -563,7 +654,7 @@ lung_dat <- lung %>%
 
 
 # -----------------------------------------------------------------------------
-# 7.3 GBSG2 breast cancer dataset
+# 9.3 GBSG2 breast cancer dataset
 # TH.data::GBSG2:
 #   time = recurrence-free survival time
 #   cens = event indicator, 1 = event, 0 = censored
@@ -581,7 +672,7 @@ gbsg2_dat <- GBSG2 %>%
 
 
 # =============================================================================
-# 8. Check event coding
+# 10. Events
 # =============================================================================
 
 cat("\nEvent coding checks:\n")
@@ -597,10 +688,11 @@ print(table(gbsg2_dat$horTh, gbsg2_dat$status))
 
 
 # =============================================================================
-# 9. Run selected analyses
+# 11. Run analyses
 # =============================================================================
 
-# Use 1000 while testing. Use 2000 or 5000 for final paper results.
+# Use 1000 while testing.
+# Use 2000 or 5000 for final paper if computation time is acceptable.
 B_boot <- 1000
 
 res_veteran <- analyze_censored_dataset(
@@ -650,7 +742,7 @@ res_gbsg2 <- analyze_censored_dataset(
 
 
 # =============================================================================
-# 10. Combine results
+# 12. Combine results
 # =============================================================================
 
 all_results_raw <- dplyr::bind_rows(
@@ -667,15 +759,33 @@ all_step_dfs <- dplyr::bind_rows(
 
 
 # =============================================================================
-# 11. Paper-ready result table
+# 13. Table
 # =============================================================================
 
-paper_results <- all_results_raw %>%
+results <- all_results_raw %>%
   dplyr::mutate(
     Censoring_1_percent = round(Censoring_1_percent, 1),
     Censoring_2_percent = round(Censoring_2_percent, 1),
     tau = round(tau, 2),
     Dtau_KM = round(Dtau_KM, 4),
+    
+    Normal_SE = round(Normal_SE, 4),
+    Normal_CI = paste0(
+      "(",
+      round(Normal_CI_lower, 4),
+      ", ",
+      round(Normal_CI_upper, 4),
+      ")"
+    ),
+    
+    Normal_CI_raw = paste0(
+      "(",
+      round(Normal_CI_lower_raw, 4),
+      ", ",
+      round(Normal_CI_upper, 4),
+      ")"
+    ),
+    
     Bootstrap_SE = round(Bootstrap_SE, 4),
     Bootstrap_CI = paste0(
       "(",
@@ -684,13 +794,7 @@ paper_results <- all_results_raw %>%
       round(Bootstrap_CI_upper, 4),
       ")"
     ),
-    Greenwood_CI = paste0(
-      "(",
-      round(Greenwood_CI_lower, 4),
-      ", ",
-      round(Greenwood_CI_upper, 4),
-      ")"
-    ),
+    
     Logrank_p_value = ifelse(
       Logrank_p_value < 0.001,
       "<0.001",
@@ -708,17 +812,19 @@ paper_results <- all_results_raw %>%
     Censoring_2_percent,
     tau,
     Dtau_KM,
+    Normal_SE,
+    Normal_CI,
+    Bootstrap_SE,
     Bootstrap_CI,
-    Greenwood_CI,
     Logrank_p_value
   )
 
-cat("\nPaper-ready table:\n")
-print(paper_results)
+cat("\nResult_table:\n")
+print(results)
 
 
 # =============================================================================
-# 12. Save tables
+# 14. Save tables
 # =============================================================================
 
 readr::write_csv(
@@ -727,8 +833,8 @@ readr::write_csv(
 )
 
 readr::write_csv(
-  paper_results,
-  file.path(out_dir, "three_cases_censored_real_data_paper_table.csv")
+  results,
+  file.path(out_dir, "three_cases_censored_real_data_table.csv")
 )
 
 readr::write_csv(
@@ -738,7 +844,7 @@ readr::write_csv(
 
 
 # =============================================================================
-# 13. Combined cumulative-divergence figure only
+# 15. Combined cumulative-divergence figure
 # =============================================================================
 
 combined_cum_plot <- ggplot2::ggplot(
@@ -751,7 +857,11 @@ combined_cum_plot <- ggplot2::ggplot(
     title = expression("Cumulative Kaplan--Meier divergence"),
     x = "Time",
     y = expression(
-      integral((widehat(bar(F))[n[1]](u) - widehat(bar(G))[n[2]](u))^2 * du, 0, t)
+      integral(
+        (widehat(bar(F))[n[1]](u) - widehat(bar(G))[n[2]](u))^2 * du,
+        0,
+        t
+      )
     )
   ) +
   ggplot2::theme_bw()
@@ -763,22 +873,5 @@ ggplot2::ggsave(
   height = 5.8,
   device = "pdf"
 )
-
-
-# =============================================================================
-# 14. Print saved files
-# =============================================================================
-
-cat("\n============================================================\n")
-cat("Analysis complete.\n")
-cat("Tables saved in:\n")
-cat(normalizePath(out_dir, mustWork = FALSE), "\n\n")
-
-cat("Figures saved in:\n")
-cat(normalizePath(fig_dir, mustWork = FALSE), "\n")
-cat("============================================================\n\n")
-
-cat("Saved files:\n")
-print(list.files(out_dir, recursive = TRUE, full.names = TRUE))
 
 
