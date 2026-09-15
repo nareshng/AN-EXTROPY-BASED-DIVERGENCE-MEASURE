@@ -1,9 +1,21 @@
 ## =============================================================================
-## Section 5.4.1 -- point estimation of D_tau under right censoring
+## Section 5.4.1 -- point estimation of D_tau and D_CC,tau under right censoring
 ##
 ## The target tau is a fixed population quantity: the smaller of the two 80th
-## lifetime percentiles. The main accuracy measures are bias, SD, and RMSE.
-## Relative MSE is retained for continuity with Tables 7--8.
+## lifetime percentiles. Tables 7--8 report relative mean squared error for
+## each estimator against its own target:
+##
+##   RelMSE_D   = mean{(D_hat - D_tau)^2} / D_tau^2,
+##   RelMSE_DCC = mean{(DCC_hat - D_CC,tau)^2} / D_CC,tau^2.
+##
+## DCC_hat uses linearly interpolated Kaplan--Meier curves and the deterministic
+## one-global-crossing aggregation documented in km_functions.R. The simulated
+## hazard differences change sign at most once. Since D_tau and D_CC,tau are
+## different targets, their relative-MSE values are not direct efficiency
+## comparisons between the two divergence measures.
+##
+## Tables 7--8 use (20,20), (50,50), (100,100), and (200,200). Tables 9--10
+## use only (30,40), (70,50), and (100,100).
 ##
 ## Full run:
 ##   Rscript Point_estimation_right_censoring.R --mode=full \
@@ -12,7 +24,7 @@
 ##   Rscript Point_estimation_right_censoring.R --mode=quick \
 ##     --output-dir=results/censored_point_quick
 ## Optional overrides: --B=2000 --seed=123
-## 
+## A single positional integer is accepted as a backward-compatible B override.
 ## =============================================================================
 
 driver_args <- commandArgs(trailingOnly = FALSE)

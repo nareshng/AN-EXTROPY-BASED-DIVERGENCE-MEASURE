@@ -203,6 +203,13 @@ cens_prepare_run <- function(output_dir) {
     stop("KM implementation self-check failed; simulation was not started.",
          call. = FALSE)
   }
+  metric_check <- cens_accuracy(
+    c(8, 12), 10, c(TRUE, TRUE), include_relmse = TRUE
+  )
+  if (!isTRUE(all.equal(unname(metric_check["relmse"]), 0.04,
+                        tolerance = 1e-14))) {
+    stop("Relative-MSE implementation self-check failed.", call. = FALSE)
+  }
   do.call(RNGkind, as.list(cens_rng_signature()))
   invisible(normalizePath(output_dir, mustWork = TRUE))
 }
@@ -245,8 +252,7 @@ cens_sample_sizes <- function(analysis) {
   if (analysis == "point") {
     list(c(20L, 20L), c(50L, 50L), c(100L, 100L), c(200L, 200L))
   } else {
-    ## Tables 9-10 sample-size pairs (manuscript layout: the first three).
-    ## Add c(200L, 200L), c(500L, 500L) here for the convergence rows.
+    ## Tables 9-10 sample-size pairs used in the manuscript.
     list(
       c(30L, 40L), c(70L, 50L), c(100L, 100L)
     )
@@ -285,6 +291,7 @@ cens_safe_flag_rate <- function(flag, keep) {
 }
 
 ## Input: estimates, scalar truth, mask, RelMSE flag. Output: named accuracy vector.
+## Tables 7--8 use the paper's relative MSE, MSE/truth^2.
 cens_accuracy <- function(est, truth, keep, include_relmse = FALSE) {
   use <- keep & is.finite(est)
   x <- est[use]
@@ -295,8 +302,7 @@ cens_accuracy <- function(est, truth, keep, include_relmse = FALSE) {
       bias = NA,
       sd = NA,
       mcse_mean = NA,
-      mse = NA,
-      rmse = NA
+      mse = NA
     )
     if (include_relmse) ans <- c(ans, relmse = NA)
     return(ans)
@@ -309,8 +315,7 @@ cens_accuracy <- function(est, truth, keep, include_relmse = FALSE) {
     bias = mean(x) - truth,
     sd = sx,
     mcse_mean = if (is.finite(sx)) sx / sqrt(length(x)) else NA_real_,
-    mse = mse,
-    rmse = sqrt(mse)
+    mse = mse
   )
   if (include_relmse) {
     relmse <- if (truth^2 > .Machine$double.eps) mse / truth^2 else NA_real_
@@ -472,7 +477,7 @@ cens_checkpoint_metadata <- function(analysis, task, mode, B, base_seed,
                                      source_md5, R_boot = NA_integer_,
                                      alpha = NA_real_) {
   list(
-    schema = "extropy-censored-cell-v1",
+    schema = "extropy-censored-cell-v2",
     analysis = analysis,
     task = cens_task_signature(task),
     mode = mode,
@@ -496,7 +501,7 @@ cens_read_checkpoint <- function(path, task, analysis, expected = NULL) {
     "alpha", "RNG_kind", "R_version", "platform", "source_md5"
   )
   if (inherits(object, "error") || !is.list(object) ||
-      !identical(object$schema, "extropy-censored-cell-v1") ||
+      !identical(object$schema, "extropy-censored-cell-v2") ||
       !identical(object$analysis, analysis) ||
       !identical(object$task, cens_task_signature(task)) ||
       !is.list(object$metadata) ||
@@ -558,7 +563,7 @@ cens_run_checkpointed_cell <- function(analysis, task, mode, B, base_seed,
     )
   }
   checkpoint <- list(
-    schema = "extropy-censored-cell-v1",
+    schema = "extropy-censored-cell-v2",
     analysis = analysis,
     task = cens_task_signature(task),
     metadata = metadata,
@@ -576,6 +581,12 @@ cens_execute_tasks <- function(analysis, tasks, mode, B, base_seed, output_dir,
                                resume, source_md5, R_boot = NA_integer_,
                                alpha = NA_real_, z = NA_real_, cores = 1L) {
   analysis <- match.arg(analysis, c("point", "ci"))
+  checkpoint_dir <- file.path(output_dir, "intermediate_results", analysis)
+  if (!dir.exists(checkpoint_dir) &&
+      !dir.create(checkpoint_dir, recursive = TRUE, showWarnings = FALSE)) {
+    stop("Could not create checkpoint directory: ", checkpoint_dir,
+         call. = FALSE)
+  }
   worker <- function(task) {
     ans <- cens_run_checkpointed_cell(
       analysis, task, mode, B, base_seed, output_dir, resume, source_md5,
@@ -612,16 +623,22 @@ cens_execute_tasks <- function(analysis, tasks, mode, B, base_seed, output_dir,
   results
 }
 
-## Input: scenario, group sizes and variance flag. Output: observed pairs and KM fit.
-cens_draw_observed <- function(sc, n1, n2, want_var) {
+## Input: scenario, group sizes, variance flag, and comparator flag.
+## Output: observed pairs and requested KM estimates.
+cens_draw_observed <- function(sc, n1, n2, want_var, want_dcc = FALSE) {
+  if (!is.logical(want_dcc) || length(want_dcc) != 1L || is.na(want_dcc)) {
+    stop("want_dcc must be TRUE or FALSE.", call. = FALSE)
+  }
   generated <- sc$gen(n1, n2)
   t1 <- pmin(generated$X, generated$C)
   s1 <- as.integer(generated$X <= generated$C)
   t2 <- pmin(generated$Y, generated$E)
   s2 <- as.integer(generated$Y <= generated$E)
+  fit <- D_km(t1, s1, t2, s2, sc$tau, want_var = want_var)
+  if (want_dcc) fit$DCC <- DCC_km(t1, s1, t2, s2, sc$tau)
   list(
     ok = TRUE,
-    r = D_km(t1, s1, t2, s2, sc$tau, want_var = want_var),
+    r = fit,
     t1 = t1,
     s1 = s1,
     t2 = t2,
@@ -652,6 +669,12 @@ cens_wide_base <- function(df) {
     keep <- df$config == keys$config[i] & df$censoring == keys$censoring[i]
     df$D_tau[keep][1]
   }, numeric(1)), 6)
+  if ("DCC_tau" %in% names(df)) {
+    wide$DCC_tau <- round(vapply(seq_len(nrow(keys)), function(i) {
+      keep <- df$config == keys$config[i] & df$censoring == keys$censoring[i]
+      df$DCC_tau[keep][1]
+    }, numeric(1)), 6)
+  }
   list(keys = keys, wide = wide)
 }
 
@@ -668,7 +691,7 @@ cens_pick_cell <- function(df, keys, i, nn, column) {
 ## Input: one task plus Monte Carlo size/base seed. Output: summary and replication frames.
 cens_run_point_cell <- function(task, B, base_seed) {
   sc <- make_scenario(task$family, task$cfg, task$cens)
-  est <- rep(NA_real_, B)
+  D_est <- DCC_est <- rep(NA_real_, B)
   censor1 <- censor2 <- rep(NA_real_, B)
   y1 <- y2 <- rep(NA_real_, B)
   zero1 <- zero2 <- terminal1 <- terminal2 <- rep(NA, B)
@@ -680,7 +703,9 @@ cens_run_point_cell <- function(task, B, base_seed) {
     rep_seed[b] <- cens_safe_seed(base_seed, task$cell_id, b)
     set.seed(rep_seed[b])
     ans <- tryCatch(
-      cens_draw_observed(sc, task$n1, task$n2, want_var = FALSE),
+      cens_draw_observed(
+        sc, task$n1, task$n2, want_var = FALSE, want_dcc = TRUE
+      ),
       error = function(e) list(ok = FALSE, error = conditionMessage(e))
     )
 
@@ -689,7 +714,8 @@ cens_run_point_cell <- function(task, B, base_seed) {
       error_message[b] <- ans$error
     } else {
       r <- ans$r
-      est[b] <- r$D
+      D_est[b] <- r$D
+      DCC_est[b] <- r$DCC
       censor1[b] <- ans$censor1
       censor2[b] <- ans$censor2
       y1[b] <- r$Y1tau
@@ -706,8 +732,9 @@ cens_run_point_cell <- function(task, B, base_seed) {
   reps <- data.frame(
     family = task$family, config = task$cfg_name, setting = sc$label,
     target_censoring = task$cens, n1 = task$n1, n2 = task$n2,
-    tau = sc$tau, D_tau = sc$D, replication = seq_len(B), seed = rep_seed,
-    D_hat = est,
+    tau = sc$tau, D_tau = sc$D, DCC_tau = sc$DCC,
+    replication = seq_len(B), seed = rep_seed,
+    D_hat = D_est, DCC_hat = DCC_est,
     realized_censoring_1 = censor1, realized_censoring_2 = censor2,
     at_risk_tau_1 = y1, at_risk_tau_2 = y2,
     zero_risk_tau_1 = zero1, zero_risk_tau_2 = zero2,
@@ -717,12 +744,23 @@ cens_run_point_cell <- function(task, B, base_seed) {
     stringsAsFactors = FALSE
   )
 
-  successful <- !failed & is.finite(est)
+  successful <- !failed & is.finite(D_est) & is.finite(DCC_est)
   regular_success <- successful & support_regular
-  all_acc <- cens_accuracy(est, sc$D, successful, include_relmse = TRUE)
-  regular_acc <- cens_accuracy(
-    est,
+  D_all <- cens_accuracy(
+    D_est, sc$D, successful, include_relmse = TRUE
+  )
+  D_regular <- cens_accuracy(
+    D_est,
     sc$D,
+    regular_success,
+    include_relmse = TRUE
+  )
+  DCC_all <- cens_accuracy(
+    DCC_est, sc$DCC, successful, include_relmse = TRUE
+  )
+  DCC_regular <- cens_accuracy(
+    DCC_est,
+    sc$DCC,
     regular_success,
     include_relmse = TRUE
   )
@@ -739,12 +777,13 @@ cens_run_point_cell <- function(task, B, base_seed) {
     realized_censoring_mcse_2 = cens_safe_sd(censor2) /
       sqrt(sum(is.finite(censor2))),
     n1 = task$n1, n2 = task$n2, B_requested = B,
-    n_success = unname(all_acc["n"]), n_regular = unname(regular_acc["n"]),
+    n_success = unname(D_all["n"]),
+    n_regular = unname(D_regular["n"]),
     failure_rate = mean(failed),
     support_nonregular_rate = cens_safe_flag_rate(!support_regular, successful),
     support_nonregular_rate_all_attempts = mean(successful & !support_regular),
     regular_analysis_rate = mean(regular_success),
-    tau = sc$tau, D_tau = sc$D,
+    tau = sc$tau, D_tau = sc$D, DCC_tau = sc$DCC,
     expected_at_risk_tau_1 = task$n1 * sc$P_obs_gt_tau_1,
     expected_at_risk_tau_2 = task$n2 * sc$P_obs_gt_tau_2,
     mean_at_risk_tau_1 = cens_safe_mean(y1),
@@ -761,17 +800,30 @@ cens_run_point_cell <- function(task, B, base_seed) {
     terminal_rate_2 = cens_safe_flag_rate(terminal2, successful),
     terminal_rate_1_all_attempts = mean(terminal1 %in% TRUE),
     terminal_rate_2_all_attempts = mean(terminal2 %in% TRUE),
-    mean_est = unname(all_acc["mean"]), bias = unname(all_acc["bias"]),
-    sd = unname(all_acc["sd"]), MCSE_mean = unname(all_acc["mcse_mean"]),
-    MSE = unname(all_acc["mse"]), RMSE = unname(all_acc["rmse"]),
-    RelMSE = unname(all_acc["relmse"]),
-    mean_est_regular = unname(regular_acc["mean"]),
-    bias_regular = unname(regular_acc["bias"]),
-    sd_regular = unname(regular_acc["sd"]),
-    MCSE_mean_regular = unname(regular_acc["mcse_mean"]),
-    MSE_regular = unname(regular_acc["mse"]),
-    RMSE_regular = unname(regular_acc["rmse"]),
-    RelMSE_regular = unname(regular_acc["relmse"]),
+    mean_est_D = unname(D_all["mean"]),
+    bias_D = unname(D_all["bias"]),
+    sd_D = unname(D_all["sd"]),
+    MCSE_mean_D = unname(D_all["mcse_mean"]),
+    MSE_D = unname(D_all["mse"]),
+    RelMSE_D = unname(D_all["relmse"]),
+    mean_est_D_regular = unname(D_regular["mean"]),
+    bias_D_regular = unname(D_regular["bias"]),
+    sd_D_regular = unname(D_regular["sd"]),
+    MCSE_mean_D_regular = unname(D_regular["mcse_mean"]),
+    MSE_D_regular = unname(D_regular["mse"]),
+    RelMSE_D_regular = unname(D_regular["relmse"]),
+    mean_est_DCC = unname(DCC_all["mean"]),
+    bias_DCC = unname(DCC_all["bias"]),
+    sd_DCC = unname(DCC_all["sd"]),
+    MCSE_mean_DCC = unname(DCC_all["mcse_mean"]),
+    MSE_DCC = unname(DCC_all["mse"]),
+    RelMSE_DCC = unname(DCC_all["relmse"]),
+    mean_est_DCC_regular = unname(DCC_regular["mean"]),
+    bias_DCC_regular = unname(DCC_regular["bias"]),
+    sd_DCC_regular = unname(DCC_regular["sd"]),
+    MCSE_mean_DCC_regular = unname(DCC_regular["mcse_mean"]),
+    MSE_DCC_regular = unname(DCC_regular["mse"]),
+    RelMSE_DCC_regular = unname(DCC_regular["relmse"]),
     stringsAsFactors = FALSE
   )
   list(summary = summary, replications = reps)
@@ -781,7 +833,8 @@ cens_run_point_cell <- function(task, B, base_seed) {
 cens_report_point_cell <- function(ans) {
   s <- ans$summary
   status_fmt <- paste0(
-    "%-7s %s %2.0f%% n=(%d,%d): RMSE=%.5g, regular=%.1f%%, ",
+    "%-7s %s %2.0f%% n=(%d,%d): RelMSE(D)=%.5g, ",
+    "RelMSE(DCC)=%.5g, regular=%.1f%%, ",
     "zero-risk=(%.1f%%, %.1f%%)"
   )
   message(sprintf(
@@ -791,7 +844,8 @@ cens_report_point_cell <- function(ans) {
     100 * s$censoring,
     s$n1,
     s$n2,
-    s$RMSE,
+    s$RelMSE_D,
+    s$RelMSE_DCC,
     100 * s$regular_analysis_rate,
     100 * s$zero_risk_rate_1,
     100 * s$zero_risk_rate_2
@@ -799,15 +853,19 @@ cens_report_point_cell <- function(ans) {
   invisible(ans)
 }
 
-## Input: long results, value column and sample sizes. Output: publication table.
-cens_make_point_wide <- function(df, value, sample_sizes) {
+## Input: long point-estimation results and sample sizes.
+## Output: publication table with paired relative-MSE columns for D and DCC.
+cens_make_point_wide <- function(df, sample_sizes) {
   initialized <- cens_wide_base(df)
   keys <- initialized$keys
   wide <- initialized$wide
   for (nn in sample_sizes) {
     tag <- sprintf("(%d,%d)", nn[1], nn[2])
-    wide[[tag]] <- vapply(seq_len(nrow(keys)), function(i) {
-      round(cens_pick_cell(df, keys, i, nn, value), 6)
+    wide[[paste("D_KM", tag)]] <- vapply(seq_len(nrow(keys)), function(i) {
+      round(cens_pick_cell(df, keys, i, nn, "RelMSE_D"), 6)
+    }, numeric(1))
+    wide[[paste("DCC_KM", tag)]] <- vapply(seq_len(nrow(keys)), function(i) {
+      round(cens_pick_cell(df, keys, i, nn, "RelMSE_DCC"), 6)
     }, numeric(1))
   }
   wide
@@ -997,12 +1055,11 @@ cens_run_ci_cell <- function(task, B, R_boot, base_seed, alpha, z,
     mean_est = unname(acc_all["mean"]), bias = unname(acc_all["bias"]),
     empirical_SD = unname(acc_all["sd"]),
     MCSE_mean = unname(acc_all["mcse_mean"]),
-    MSE = unname(acc_all["mse"]), RMSE = unname(acc_all["rmse"]),
+    MSE = unname(acc_all["mse"]),
     mean_est_regular = unname(acc_regular["mean"]),
     bias_regular = unname(acc_regular["bias"]),
     empirical_SD_regular = unname(acc_regular["sd"]),
     MCSE_mean_regular = unname(acc_regular["mcse_mean"]),
-    RMSE_regular = unname(acc_regular["rmse"]),
     mean_SE_Greenwood = cens_safe_mean(se[regular_success]),
     SD_to_meanSE_ratio = unname(acc_regular["sd"]) /
       cens_safe_mean(se[regular_success]),
@@ -1185,6 +1242,18 @@ cens_collect_checkpoints <- function(analysis, tasks, mode, B, base_seed,
 ## Output: the canonical Tables 7--8 files and diagnostics, written atomically.
 cens_write_point_outputs <- function(results, sample_sizes, output_dir,
                                      task_manifest, checkpoint_manifest) {
+  obsolete_point_tables <- setdiff(
+    list.files(output_dir, pattern = "^Table[78]_.*[.]csv$"),
+    c("Table7_RelMSE_Exponential.csv", "Table8_RelMSE_Weibull.csv")
+  )
+  if (length(obsolete_point_tables)) {
+    stop(
+      "Unexpected obsolete Table 7--8 file(s) detected: ",
+      paste(obsolete_point_tables, collapse = ", "),
+      ". Use a fresh output directory.",
+      call. = FALSE
+    )
+  }
   bound <- cens_bind_results(results)
   res <- bound$summary
   reps <- bound$replications
@@ -1197,24 +1266,12 @@ cens_write_point_outputs <- function(results, sample_sizes, output_dir,
     file.path(output_dir, "Section54_point_estimation_replications.csv")
   )
   atomic_write_csv(
-    cens_make_point_wide(res[res$family == "exp", ], "RelMSE", sample_sizes),
+    cens_make_point_wide(res[res$family == "exp", ], sample_sizes),
     file.path(output_dir, "Table7_RelMSE_Exponential.csv")
   )
   atomic_write_csv(
-    cens_make_point_wide(
-      res[res$family == "weibull", ], "RelMSE", sample_sizes
-    ),
+    cens_make_point_wide(res[res$family == "weibull", ], sample_sizes),
     file.path(output_dir, "Table8_RelMSE_Weibull.csv")
-  )
-  atomic_write_csv(
-    cens_make_point_wide(res[res$family == "exp", ], "RMSE", sample_sizes),
-    file.path(output_dir, "Table7_RMSE_Exponential.csv")
-  )
-  atomic_write_csv(
-    cens_make_point_wide(
-      res[res$family == "weibull", ], "RMSE", sample_sizes
-    ),
-    file.path(output_dir, "Table8_RMSE_Weibull.csv")
   )
   atomic_write_csv(
     task_manifest,

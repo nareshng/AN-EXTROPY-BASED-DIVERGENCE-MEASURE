@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 
-## Build Tables 7--10 
+## Rebuild Tables 7--10 only from complete, validated per-cell checkpoints.
 ## Examples:
 ##   Rscript Aggregate_right_censoring_results.R --analysis=point \
 ##     --mode=full --B=2000 --seed=5401 --output-dir=results/full/section_5_4

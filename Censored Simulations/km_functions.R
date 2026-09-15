@@ -14,7 +14,14 @@
 ##   4 sum_l d_1l A_1l^2 / {Y_1l (Y_1l-d_1l)}
 ## + 4 sum_l d_2l A_2l^2 / {Y_2l (Y_2l-d_2l)}.
 ##
-## 
+## No additional division by n_1, n_2, or n is applied by calling scripts.
+##
+## This file also implements the truncated Cox--Czanner divergence used as the
+## comparator in Tables 7--8.  Its Kaplan--Meier estimator uses linearly
+## interpolated KM curves and a deterministic one-crossing total-variation
+## rule.  Taking an absolute value separately on every pooled interval is not
+## used: that construction accumulates sample-level sign noise and is
+## inconsistent even for two exponential distributions.
 ## =============================================================================
 
 ## Inputs: value, label, bounds, openness, and integer flag.
@@ -103,6 +110,7 @@ km_fast <- function(time, status) {
 
 ## Inputs: jump times/values, evaluation points, and pre-jump value.
 ## Returns: right-continuous step-function values at all evaluation points.
+## Explicit positive indexing avoids R's zero-index dropping/recycling behaviour.
 step_eval <- function(t, vals, u, init = 1) {
   if (!is.numeric(t) || !is.numeric(vals) || length(t) != length(vals) ||
       anyNA(t) || any(!is.finite(t)) || is.unsorted(t, strictly = TRUE)) {
@@ -204,6 +212,67 @@ D_km <- function(t1, s1, t2, s2, tau, want_var = TRUE) {
                  var = var_D, bias_hat = bias_hat,
                  variance_positive = variance_positive,
                  inference_regular = inference_regular))
+}
+
+## ---- truncated Cox--Czanner comparator --------------------------------------
+## Input: a km_fast() result and evaluation points.
+## Output: the linearly interpolated KM curve used by Cox and Czanner (2016).
+km_linear_eval <- function(km, u) {
+  if (!is.list(km) || !all(c("t", "S") %in% names(km))) {
+    stop("km must be a result returned by km_fast().", call. = FALSE)
+  }
+  if (!is.numeric(u) || anyNA(u) || any(!is.finite(u)) || any(u < 0)) {
+    stop("u must contain finite nonnegative values.", call. = FALSE)
+  }
+  if (!length(km$t)) return(rep(1, length(u)))
+  if (km$t[1L] <= 0) {
+    stop("The linearly interpolated Cox--Czanner estimator requires positive event times.",
+         call. = FALSE)
+  }
+  stats::approx(
+    x = c(0, km$t), y = c(1, km$S), xout = u,
+    method = "linear", rule = 2, ties = "ordered"
+  )$y
+}
+
+## Inputs: values of two linearly interpolated survival curves on one grid.
+## Output: estimated total variation when the hazard difference changes sign at
+## most once.  The maximum selects the deterministic global extremum suggested
+## by Cox and Czanner for a single crossing.  With no crossing it reduces
+## asymptotically to the absolute value of the global signed sum.
+dcc_one_crossing_value <- function(F_values, G_values) {
+  if (!is.numeric(F_values) || !is.numeric(G_values) ||
+      length(F_values) != length(G_values) || length(F_values) < 2L ||
+      anyNA(F_values) || anyNA(G_values) ||
+      any(!is.finite(F_values)) || any(!is.finite(G_values))) {
+    stop("F_values and G_values must be equal-length finite numeric vectors.",
+         call. = FALSE)
+  }
+  increments <-
+    F_values[-1L] * G_values[-length(G_values)] -
+    F_values[-length(F_values)] * G_values[-1L]
+  cumulative <- c(0, cumsum(increments))
+  total <- cumulative[length(cumulative)]
+  max(abs(cumulative) + abs(total - cumulative))
+}
+
+## Inputs: two censored samples and a fixed truncation horizon.
+## Output: the Cox--Czanner KM estimator on [0,tau].  The simulation families
+## used in Tables 7--8 have at most one crossing of their hazard functions.
+DCC_km <- function(t1, s1, t2, s2, tau) {
+  d1 <- validate_survival_sample(t1, s1, "group 1")
+  d2 <- validate_survival_sample(t2, s2, "group 2")
+  assert_scalar_numeric(tau, "tau", lower = 0, lower_open = TRUE)
+  k1 <- km_fast(d1$time, d1$status)
+  k2 <- km_fast(d2$time, d2$status)
+  grid <- sort(unique(c(0, k1$t[k1$t <= tau], k2$t[k2$t <= tau], tau)))
+  F_values <- km_linear_eval(k1, grid)
+  G_values <- km_linear_eval(k2, grid)
+  value <- dcc_one_crossing_value(F_values, G_values)
+  if (!is.finite(value) || value < -sqrt(.Machine$double.eps)) {
+    stop("The Cox--Czanner estimator is non-finite or negative.", call. = FALSE)
+  }
+  max(value, 0)
 }
 
 ## ---- vectorised within-group pairs bootstrap ---------------------------------
@@ -382,6 +451,32 @@ true_D_tau <- function(S1, S2, tau) {
                    abs.tol = 1e-12, stop.on.error = TRUE)$value
 }
 
+## Inputs: two survival functions, their densities, a fixed horizon, and a
+## positive endpoint-transformation power. Output: population Cox--Czanner
+## divergence on [0,tau]. A shape-adaptive power is supplied for Weibull
+## scenarios so density singularities at zero are integrated stably.
+true_DCC_tau <- function(S1, S2, f1, f2, tau, transform_power = 1) {
+  if (!is.function(S1) || !is.function(S2) ||
+      !is.function(f1) || !is.function(f2)) {
+    stop("S1, S2, f1 and f2 must be functions.", call. = FALSE)
+  }
+  assert_scalar_numeric(tau, "tau", lower = 0, lower_open = TRUE)
+  assert_scalar_numeric(
+    transform_power, "transform_power", lower = 0, lower_open = TRUE
+  )
+  transformed_integrand <- function(u) {
+    t <- tau * u^transform_power
+    jacobian <- transform_power * tau * u^(transform_power - 1)
+    value <- abs(S1(t) * f2(t) - S2(t) * f1(t)) * jacobian
+    value[!is.finite(value) & u == 0] <- 0
+    value
+  }
+  stats::integrate(
+    transformed_integrand, 0, 1, subdivisions = 2000,
+    rel.tol = 1e-10, abs.tol = 1e-12, stop.on.error = TRUE
+  )$value
+}
+
 ## family = "exp": cfg = c(lambda1, lambda2), with rates lambda_r.
 ## family = "weibull": cfg = c(shape1, scale1, shape2, scale2).
 ## Inputs: family, parameters, target censoring, and population tau quantile.
@@ -403,6 +498,8 @@ make_scenario <- function(family, cfg, cens, tau_quantile = 0.80) {
     tau <- min(stats::qexp(tau_quantile, rate = l1),
                stats::qexp(tau_quantile, rate = l2))
     S1 <- function(t) exp(-l1 * t); S2 <- function(t) exp(-l2 * t)
+    f1 <- function(t) stats::dexp(t, rate = l1)
+    f2 <- function(t) stats::dexp(t, rate = l2)
     gen <- function(n1, n2) {
       assert_scalar_numeric(n1, "n1", lower = 2, integer = TRUE)
       assert_scalar_numeric(n2, "n2", lower = 2, integer = TRUE)
@@ -412,6 +509,7 @@ make_scenario <- function(family, cfg, cens, tau_quantile = 0.80) {
     label <- sprintf("(%.1f, %.1f)", l1, l2)
     cens1 <- g1 / (l1 + g1)
     cens2 <- g2 / (l2 + g2)
+    dcc_transform_power <- 1
   } else {
     if (length(cfg) != 4L) {
       stop("A Weibull cfg must be c(shape1, scale1, shape2, scale2).", call. = FALSE)
@@ -423,6 +521,8 @@ make_scenario <- function(family, cfg, cens, tau_quantile = 0.80) {
                stats::qweibull(tau_quantile, shape = k2, scale = scale2))
     S1 <- function(t) exp(-(t / scale1)^k1)
     S2 <- function(t) exp(-(t / scale2)^k2)
+    f1 <- function(t) stats::dweibull(t, shape = k1, scale = scale1)
+    f2 <- function(t) stats::dweibull(t, shape = k2, scale = scale2)
     gen <- function(n1, n2) {
       assert_scalar_numeric(n1, "n1", lower = 2, integer = TRUE)
       assert_scalar_numeric(n2, "n2", lower = 2, integer = TRUE)
@@ -433,6 +533,7 @@ make_scenario <- function(family, cfg, cens, tau_quantile = 0.80) {
     label <- sprintf("((%.1f, %.1f), (%.1f, %.1f))", k1, scale1, k2, scale2)
     cens1 <- weibull_censor_probability(g1, k1, scale1)
     cens2 <- weibull_censor_probability(g2, k2, scale2)
+    dcc_transform_power <- max(1, 2 / min(k1, k2))
   }
 
   if (max(abs(c(cens1, cens2) - cens)) > 1e-7) {
@@ -441,7 +542,12 @@ make_scenario <- function(family, cfg, cens, tau_quantile = 0.80) {
   list(
     gen = gen, tau = tau,
     D = true_D_tau(S1, S2, tau),
-    S1 = S1, S2 = S2, label = label, g1 = g1, g2 = g2,
+    DCC = true_DCC_tau(
+      S1, S2, f1, f2, tau,
+      transform_power = dcc_transform_power
+    ),
+    S1 = S1, S2 = S2, f1 = f1, f2 = f2,
+    label = label, g1 = g1, g2 = g2,
     cens1 = cens1, cens2 = cens2,
     P_obs_gt_tau_1 = S1(tau) * exp(-g1 * tau),
     P_obs_gt_tau_2 = S2(tau) * exp(-g2 * tau)
@@ -466,6 +572,49 @@ verify_km_functions <- function(verbose = TRUE) {
                c(1, 2, 3, 4), c(1, 0, 1, 0), tau = 2.5)
   checks["identical KM divergence"] <- isTRUE(all.equal(same$D, 0))
   checks["degenerate variance flagged"] <- !same$inference_regular && same$var == 0
+  checks["identical KM Cox--Czanner divergence"] <- isTRUE(all.equal(
+    DCC_km(c(1, 2, 3, 4), c(1, 0, 1, 0),
+           c(1, 2, 3, 4), c(1, 0, 1, 0), tau = 2.5),
+    0
+  ))
+
+  dcc_forward <- DCC_km(
+    c(0.5, 1, 1.5, 2, 3), c(1, 0, 1, 0, 1),
+    c(0.4, 1.2, 1.8, 2.5, 3.2, 4), c(1, 1, 0, 1, 0, 1),
+    tau = 2.4
+  )
+  dcc_reverse <- DCC_km(
+    c(0.4, 1.2, 1.8, 2.5, 3.2, 4), c(1, 1, 0, 1, 0, 1),
+    c(0.5, 1, 1.5, 2, 3), c(1, 0, 1, 0, 1),
+    tau = 2.4
+  )
+  checks["Cox--Czanner estimator is symmetric"] <-
+    isTRUE(all.equal(dcc_forward, dcc_reverse, tolerance = 1e-14))
+  regression_F <- c(1, 0.9, 0.4, 0.3, 0.2)
+  regression_G <- c(1, 0.7, 0.65, 0.2, 0.15)
+  checks["one-crossing rule is not intervalwise variation"] <-
+    isTRUE(all.equal(
+      dcc_one_crossing_value(regression_F, regression_G),
+      0.395,
+      tolerance = 1e-14
+    ))
+  checks["known linearly interpolated Cox--Czanner value"] <-
+    isTRUE(all.equal(
+      DCC_km(c(1, 3), c(1, 1), c(2, 4), c(1, 1), tau = 2.5),
+      0.34375,
+      tolerance = 1e-14
+    ))
+  dcc_ties <- DCC_km(
+    c(1, 1, 3), c(1, 1, 1),
+    c(1, 2, 2), c(1, 1, 1),
+    tau = 2.5
+  )
+  checks["tied and simultaneous failures are finite"] <-
+    is.finite(dcc_ties) && dcc_ties >= 0
+  checks["no-event Cox--Czanner value"] <- isTRUE(all.equal(
+    DCC_km(c(1, 2), c(0, 0), c(1.5, 3), c(0, 0), tau = 2.5),
+    0
+  ))
 
   terminal <- D_km(c(1, 2), c(0, 1), c(1, 3), c(1, 0), tau = 2.5)
   checks["empty risk set flagged"] <- terminal$zero_risk_1 && !terminal$support_regular &&
@@ -497,6 +646,17 @@ verify_km_functions <- function(verbose = TRUE) {
   sc_wei <- make_scenario("weibull", c(1.3, 2, 0.8, 1), cens = 0.3)
   sc_wei_singular <- make_scenario("weibull", c(0.5, 1, 1, 1), cens = 0.3)
   checks["exponential censor calibration"] <- max(abs(c(sc_exp$cens1, sc_exp$cens2) - 0.3)) < 1e-10
+  dcc_exp_closed <- abs(1 - 0.5) / (1 + 0.5) *
+    (1 - exp(-(1 + 0.5) * sc_exp$tau))
+  checks["exponential Cox--Czanner target"] <-
+    isTRUE(all.equal(sc_exp$DCC, dcc_exp_closed, tolerance = 1e-9))
+  sc_wei_exp <- make_scenario("weibull", c(1, 2, 1, 1), cens = 0.3)
+  checks["Weibull shape-one target equals exponential target"] <-
+    isTRUE(all.equal(sc_wei_exp$DCC, sc_exp$DCC, tolerance = 1e-9))
+  dense_t <- seq(0, sc_exp$tau, length.out = 10001L)
+  dense_dcc <- dcc_one_crossing_value(sc_exp$S1(dense_t), sc_exp$S2(dense_t))
+  checks["one-crossing aggregation matches exponential target"] <-
+    isTRUE(all.equal(dense_dcc, sc_exp$DCC, tolerance = 1e-4))
   checks["Weibull censor calibration"] <- max(abs(c(sc_wei$cens1, sc_wei$cens2) - 0.3)) < 1e-7
   checks["Weibull shape-below-one calibration"] <-
     max(abs(c(sc_wei_singular$cens1, sc_wei_singular$cens2) - 0.3)) < 1e-7
@@ -518,7 +678,8 @@ verify_km_functions <- function(verbose = TRUE) {
   checks["vectorised bootstrap"] <- isTRUE(all.equal(attr(bt, "draws"), slow,
                                                        tolerance = 1e-13))
 
-  ## Optional comparison with survival::survfit. 
+  ## Optional comparison with survival::survfit. Its absence is not a failure
+  ## because the simulations themselves use only base R.
   if (requireNamespace("survival", quietly = TRUE)) {
     set.seed(41)
     ok_survival <- TRUE

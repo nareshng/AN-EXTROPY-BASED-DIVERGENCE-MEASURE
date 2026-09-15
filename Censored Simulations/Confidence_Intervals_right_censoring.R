@@ -11,7 +11,9 @@
 ##   the degenerate null F=G or when follow-up through tau is sparse.
 ##
 ## Exploratory intervals (long output only):
-##   reflected/basic bootstrap and plug-in bias-centred normal intervals.
+##   reflected/basic bootstrap and plug-in bias-centred normal intervals. Neither
+##   has a separate validity theorem in the paper and neither should be presented
+##   as a recommended inferential procedure.
 ##
 ## Full run:
 ##   Rscript Confidence_Intervals_right_censoring.R --mode=full \
@@ -43,8 +45,7 @@ out_dir <- opt$output_dir
 alpha <- 0.05
 z <- stats::qnorm(1 - alpha / 2)
 
-## The two larger balanced settings directly address the absence of visible
-## convergence at n1=n2=100 in the previous revision.
+## Keep exactly the three sample-size pairs specified for Tables 9--10.
 sample_sizes <- cens_sample_sizes("ci")
 tasks <- cens_build_tasks(sample_sizes)
 source_md5 <- cens_source_md5("ci", driver_dir)

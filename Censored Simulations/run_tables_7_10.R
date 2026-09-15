@@ -120,6 +120,18 @@ if (!dir.exists(output_dir) &&
     !dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)) {
   stop("Could not create output directory: ", output_dir, call. = FALSE)
 }
+obsolete_point_tables <- setdiff(
+  list.files(output_dir, pattern = "^Table[78]_.*[.]csv$"),
+  c("Table7_RelMSE_Exponential.csv", "Table8_RelMSE_Weibull.csv")
+)
+if (length(obsolete_point_tables)) {
+  stop(
+    "Unexpected obsolete Table 7--8 file(s) detected: ",
+    paste(obsolete_point_tables, collapse = ", "),
+    ". Use a fresh output directory.",
+    call. = FALSE
+  )
+}
 log_dir <- file.path(output_dir, "logs")
 if (!dir.exists(log_dir) &&
     !dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)) {
@@ -225,8 +237,8 @@ run_driver(
 )
 
 expected <- c(
-  "Table7_RMSE_Exponential.csv",
-  "Table8_RMSE_Weibull.csv",
+  "Table7_RelMSE_Exponential.csv",
+  "Table8_RelMSE_Weibull.csv",
   "Table9_CI_Exponential.csv",
   "Table10_CI_Weibull.csv",
   "Section54_point_estimation_long.csv",
@@ -261,7 +273,21 @@ ci_long <- read_output_csv("Section54_CI_long.csv")
 
 point_sizes <- size_tags("point")
 ci_sizes <- size_tags("ci")
-point_columns <- c("Setting", "Censoring", "D_tau", point_sizes)
+if (!identical(
+      point_sizes,
+      c("(20,20)", "(50,50)", "(100,100)", "(200,200)")
+    )) {
+  stop("Tables 7--8 sample-size design was changed unexpectedly.", call. = FALSE)
+}
+if (!identical(ci_sizes, c("(30,40)", "(70,50)", "(100,100)"))) {
+  stop("Tables 9--10 sample-size design was changed unexpectedly.", call. = FALSE)
+}
+point_columns <- c(
+  "Setting", "Censoring", "D_tau", "DCC_tau",
+  unlist(lapply(point_sizes, function(nn) {
+    paste(c("D_KM", "DCC_KM"), nn)
+  }), use.names = FALSE)
+)
 ci_columns <- c(
   "Setting", "Censoring", "D_tau",
   unlist(lapply(ci_sizes, function(nn) {
@@ -321,7 +347,10 @@ validate_table(tables[[2L]], point_columns, "Table 8")
 validate_table(tables[[3L]], ci_columns, "Table 9")
 validate_table(tables[[4L]], ci_columns, "Table 10")
 
-point_required <- c("B_requested", "failure_rate")
+point_required <- c(
+  "B_requested", "failure_rate", "D_tau", "DCC_tau",
+  "RelMSE_D", "RelMSE_DCC"
+)
 ci_required <- c(
   "B_requested", "R_boot", "failure_rate", "bootstrap_failure_rate"
 )
@@ -330,8 +359,23 @@ if (!all(point_required %in% names(point_long)) ||
     any(!is.finite(point_long$B_requested)) ||
     any(point_long$B_requested != settings$B) ||
     any(!is.finite(point_long$failure_rate)) ||
+    any(!vapply(point_long[c(
+      "D_tau", "DCC_tau", "RelMSE_D", "RelMSE_DCC"
+    )], function(value) is.numeric(value) && all(is.finite(value)), logical(1L))) ||
     any(point_long$failure_rate > 0)) {
   stop("Tables 7--8 summary contract failed.", call. = FALSE)
+}
+unexpected_point_tables <- setdiff(
+  list.files(output_dir, pattern = "^Table[78]_.*[.]csv$"),
+  expected[seq_len(2L)]
+)
+if (length(unexpected_point_tables)) {
+  stop(
+    "Unexpected obsolete Table 7--8 file(s) detected: ",
+    paste(unexpected_point_tables, collapse = ", "),
+    ". Use a fresh output directory.",
+    call. = FALSE
+  )
 }
 if (!all(ci_required %in% names(ci_long)) ||
     nrow(ci_long) != n_cells("ci") ||
