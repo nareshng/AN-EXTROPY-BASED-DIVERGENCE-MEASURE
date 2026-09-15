@@ -30,8 +30,6 @@ working directory.
 
 The exponential parameter pairs are rates, matching `rexp(rate = lambda)`.
 Each Weibull tuple is `(shape, scale)`, matching R's `rweibull()` convention.
-The exponential censoring rates are calibrated separately by group so that both
-groups have the stated marginal censoring probability.
 
 ## Table mapping
 
@@ -43,13 +41,16 @@ groups have the stated marginal censoring probability.
 | 10 | `Table10_CI_Weibull.csv` | Greenwood normal and diagnostic percentile-bootstrap intervals |
 
 Detailed long-format, replication-level, task-manifest, and checkpoint-manifest
-files are also written. Tables 7--8 report only relative mean squared error,
+files are also written. Tables 7--8 report relative mean squared error,
 calculated separately against the target of each estimator:
 
 ```text
 RelMSE_D   = mean{(D_hat - D_tau)^2} / D_tau^2
 RelMSE_DCC = mean{(DCC_hat - D_CC,tau)^2} / D_CC,tau^2.
 ```
+We deliberately removed \(\mathrm{RelMSE}_{D_{CC}}\) from the paper because the two measures are not directly comparable.
+
+
 
 Each sample-size block therefore contains two columns, `D_KM` and `DCC_KM`.
 Because the two estimators target different divergence functionals, their
