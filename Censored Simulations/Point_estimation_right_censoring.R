@@ -3,8 +3,7 @@
 ##
 ## The target tau is a fixed population quantity: the smaller of the two 80th
 ## lifetime percentiles. The main accuracy measures are bias, SD, and RMSE.
-## Relative MSE is retained for continuity with Tables 7--8, but should not be
-## used to compare settings whose true D_tau values differ or approach zero.
+## Relative MSE is retained for continuity with Tables 7--8.
 ##
 ## Full run:
 ##   Rscript Point_estimation_right_censoring.R --mode=full \
@@ -13,7 +12,7 @@
 ##   Rscript Point_estimation_right_censoring.R --mode=quick \
 ##     --output-dir=results/censored_point_quick
 ## Optional overrides: --B=2000 --seed=123
-## A single positional integer is accepted as a backward-compatible B override.
+## 
 ## =============================================================================
 
 driver_args <- commandArgs(trailingOnly = FALSE)
