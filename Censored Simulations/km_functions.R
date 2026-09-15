@@ -14,7 +14,7 @@
 ##   4 sum_l d_1l A_1l^2 / {Y_1l (Y_1l-d_1l)}
 ## + 4 sum_l d_2l A_2l^2 / {Y_2l (Y_2l-d_2l)}.
 ##
-## No additional division by n_1, n_2, or n is applied by calling scripts.
+## 
 ## =============================================================================
 
 ## Inputs: value, label, bounds, openness, and integer flag.
@@ -103,7 +103,6 @@ km_fast <- function(time, status) {
 
 ## Inputs: jump times/values, evaluation points, and pre-jump value.
 ## Returns: right-continuous step-function values at all evaluation points.
-## Explicit positive indexing avoids R's zero-index dropping/recycling behaviour.
 step_eval <- function(t, vals, u, init = 1) {
   if (!is.numeric(t) || !is.numeric(vals) || length(t) != length(vals) ||
       anyNA(t) || any(!is.finite(t)) || is.unsorted(t, strictly = TRUE)) {
@@ -519,8 +518,7 @@ verify_km_functions <- function(verbose = TRUE) {
   checks["vectorised bootstrap"] <- isTRUE(all.equal(attr(bt, "draws"), slow,
                                                        tolerance = 1e-13))
 
-  ## Optional comparison with survival::survfit. Its absence is not a failure
-  ## because the simulations themselves use only base R.
+  ## Optional comparison with survival::survfit. 
   if (requireNamespace("survival", quietly = TRUE)) {
     set.seed(41)
     ok_survival <- TRUE
