@@ -11,9 +11,7 @@
 ##   the degenerate null F=G or when follow-up through tau is sparse.
 ##
 ## Exploratory intervals (long output only):
-##   reflected/basic bootstrap and plug-in bias-centred normal intervals. Neither
-##   has a separate validity theorem in the paper and neither should be presented
-##   as a recommended inferential procedure.
+##   reflected/basic bootstrap and plug-in bias-centred normal intervals.
 ##
 ## Full run:
 ##   Rscript Confidence_Intervals_right_censoring.R --mode=full \
