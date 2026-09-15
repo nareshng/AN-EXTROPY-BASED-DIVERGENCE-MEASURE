@@ -48,7 +48,7 @@ calculated separately against the target of each estimator:
 RelMSE_D   = mean{(D_hat - D_tau)^2} / D_tau^2
 RelMSE_DCC = mean{(DCC_hat - D_CC,tau)^2} / D_CC,tau^2.
 ```
-We deliberately removed \(\mathrm{RelMSE}_{D_{CC}}\) from the paper because the two measures are not directly comparable.
+We deliberately removed `\mathrm{RelMSE}_{D_{CC}}` from the paper because the two measures are not directly comparable.
 
 
 
