@@ -36,7 +36,13 @@ script_dir <- if (length(script_arg)) {
 source(file.path(script_dir, "image_functions.R"))
 
 GROUPS <- c("NT", "BT", "MT")
-CFG <- list(image_dir = file.path(script_dir, "Images"), indices = NULL, extension = "jpg",
+## Accept either capitalisation of the image folder (the repository uses images/).
+default_image_dir <- local({
+  cand <- file.path(script_dir, c("Images", "images"))
+  hit <- cand[dir.exists(cand)]
+  if (length(hit)) hit[1L] else cand[1L]
+})
+CFG <- list(image_dir = default_image_dir, indices = NULL, extension = "jpg",
             digits = 3L, output_dir = "image_outputs", figure = TRUE, self_test = FALSE)
 for (arg in commandArgs(trailingOnly = TRUE)) {
   if (identical(arg, "--help")) {
@@ -62,7 +68,8 @@ if (!CFG$extension %in% c("jpg", "jpeg", "png")) {
 }
 if (!dir.exists(CFG$image_dir)) {
   stop("Image directory not found: ", CFG$image_dir,
-       "\nGive its location with --image-dir=PATH.", call. = FALSE)
+       "\nLooked for Images/ and images/ beside the script; ",
+       "give the location with --image-dir=PATH.", call. = FALSE)
 }
 
 ## ---- which indices are available ---------------------------------------------

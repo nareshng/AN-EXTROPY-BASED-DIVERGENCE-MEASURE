@@ -97,14 +97,6 @@ if (!CFG$figure_style %in% c("paper", "base")) {
 if (!CFG$cumulative_geom %in% c("step", "line")) {
   stop("--cumulative-geom must be step or line.", call. = FALSE)
 }
-if (CFG$figures && CFG$figure_style == "paper") {
-  source(file.path(script_dir, "figures_paper_style.R"))
-  if (!requireNamespace("ggplot2", quietly = TRUE)) {
-    stop("--figure-style=paper needs ggplot2 (and survminer for the ",
-         "Kaplan-Meier panel). Install them, or use --figure-style=base.",
-         call. = FALSE)
-  }
-}
 if (!is.finite(CFG$tau_quantile) || CFG$tau_quantile <= 0 || CFG$tau_quantile >= 1) {
   stop("--tau-quantile must lie strictly between 0 and 1.", call. = FALSE)
 }
@@ -119,6 +111,16 @@ if (length(CFG$fixed_horizons) != 3L || any(!is.finite(CFG$fixed_horizons)) ||
 if (CFG$self_test) {
   ok <- rd_self_test()
   quit(save = "no", status = if (isTRUE(ok)) 0L else 1L)
+}
+
+## The figure renderer is only needed for an actual run, never for --self-test.
+if (CFG$figures && CFG$figure_style == "paper") {
+  source(file.path(script_dir, "figures_paper_style.R"))
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("--figure-style=paper needs ggplot2 (and survminer for the ",
+         "Kaplan-Meier panel). Install them, or use --figure-style=base.",
+         call. = FALSE)
+  }
 }
 
 ## ---- data --------------------------------------------------------------------
