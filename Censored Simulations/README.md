@@ -1,6 +1,6 @@
 # Corrected code for Tables 7--10
 
-This folder contains only the corrected right-censoring simulation code needed
+This folder contains the right-censoring simulation code needed
 to generate Tables 7--10 of the paper.
 
 ## Main command
@@ -39,8 +39,7 @@ groups have the stated marginal censoring probability.
 | 9 | `Table9_CI_Exponential.csv` | Greenwood normal and diagnostic percentile-bootstrap intervals |
 | 10 | `Table10_CI_Weibull.csv` | Greenwood normal and diagnostic percentile-bootstrap intervals |
 
-Detailed long-format, replication-level, task-manifest, and checkpoint-manifest
-files are also written. For Tables 7--8,
+For Tables 7--8,
 `RMSE = sqrt(mean{(D_hat-D_tau)^2})`; the separate relative-MSE diagnostic is
 `MSE/D_tau^2`. RMSE is the primary comparison because relative MSE is unstable
 when the true divergence is close to zero.
