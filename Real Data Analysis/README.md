@@ -10,8 +10,7 @@ Two independent analyses, each runnable with one command from this folder.
 Shared code: `real_data_functions.R` (data loading, analysis, figures, checks) and
 `image_functions.R` (image reading and the divergence estimator). The censored
 analysis reads the estimator, the Greenwood variance and the bootstrap from
-`../Censored Simulations/km_functions.R`, so Section 6 and the Section 5.4
-simulations use one implementation.
+`../Censored Simulations/km_functions.R`.
 
 ## Software
 
