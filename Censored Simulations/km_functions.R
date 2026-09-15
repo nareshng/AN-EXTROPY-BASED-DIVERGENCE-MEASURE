@@ -6,22 +6,9 @@
 ## under independent right censoring. The implementation uses the exact
 ## Kaplan--Meier step functions on [0, tau]. Inference requires tau to be fixed
 ## before a sample is analysed and observable follow-up through tau in both
-## groups. Every function validates its inputs and explicitly reports samples or
-## resamples for which these support conditions fail.
+## groups.
 ##
-## The Greenwood calculation returned by D_km() is the direct variance estimate
 ##
-##   4 sum_l d_1l A_1l^2 / {Y_1l (Y_1l-d_1l)}
-## + 4 sum_l d_2l A_2l^2 / {Y_2l (Y_2l-d_2l)}.
-##
-## No additional division by n_1, n_2, or n is applied by calling scripts.
-##
-## This file also implements the truncated Cox--Czanner divergence used as the
-## comparator in Tables 7--8.  Its Kaplan--Meier estimator uses linearly
-## interpolated KM curves and a deterministic one-crossing total-variation
-## rule.  Taking an absolute value separately on every pooled interval is not
-## used: that construction accumulates sample-level sign noise and is
-## inconsistent even for two exponential distributions.
 ## =============================================================================
 
 ## Inputs: value, label, bounds, openness, and integer flag.
