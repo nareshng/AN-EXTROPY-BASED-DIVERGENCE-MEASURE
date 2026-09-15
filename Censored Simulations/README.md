@@ -51,29 +51,9 @@ percentage of samples satisfying the Greenwood normal-inference regularity
 checks; it is not the bootstrap-availability percentage. The detailed output
 reports all denominators and failure rates.
 
-## Corrected methodology
-
-- The estimand is
-  `D_tau = integral_0^tau {S1(t)-S2(t)}^2 dt` for a fixed population value of
-  `tau`, chosen as the smaller population 80th lifetime percentile.
-- Weibull censoring calibration solves for the requested probability
-  `P(C < X)`; it no longer confuses censoring with the uncensored probability.
-- Kaplan--Meier curves are evaluated without the former R zero-index/recycling
-  error.
-- The estimator and its Greenwood variance are integrated exactly over the
-  pooled Kaplan--Meier jump intervals.
-- The Greenwood result is the direct variance of the estimator; the calling
-  code does not divide it by the sample size again.
-- Bootstrap samples resample the observed `(time,status)` pairs separately
-  within the two groups and retain the same fixed `tau`.
-- Failed or nonregular samples are retained and reported. Headline coverage
-  counts unavailable intervals as noncoverage.
-- The percentile bootstrap is a diagnostic comparator; the code does not claim
-  that it is uniformly valid near the degenerate null or with sparse follow-up.
 
 Tables 7--8 use balanced sample sizes 20, 50, 100, and 200. Tables 9--10 use
-sample-size pairs `(30,40)`, `(70,50)`, `(100,100)`, `(200,200)`, and
-`(500,500)` to show convergence beyond 100.
+sample-size pairs `(30,40)`, `(70,50)`, and `(100,100)`.
 
 ## Restarting the long run
 
@@ -134,5 +114,3 @@ output directory until the corresponding `--aggregate-only` command succeeds.
   tables, task selection, and checkpoints.
 - `atomic_io_functions.R`: safe atomic CSV and RDS writing.
 
-The source was statically audited in the assembly environment. R was not
-available there, so the quick run must be completed before the full simulation.
