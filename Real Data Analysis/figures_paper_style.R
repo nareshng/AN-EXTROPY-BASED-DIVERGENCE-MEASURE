@@ -1,17 +1,11 @@
 ## =============================================================================
 ## Section 6 -- Figures 1-3 and the combined cumulative-divergence figure, drawn
 ## exactly as in the code that produced the submitted manuscript:
-##   * Kaplan-Meier panel  : survminer::ggsurvplot(conf.int, pval, theme_bw)
-##   * cumulative divergence: ggplot2::geom_step + dashed line at tau
-## Exactly two PDFs per data set are written, named for the manuscript:
+
 ##   Veteran_KM_curve.pdf       Veteran_cumulative_divergence.pdf
 ##   Lung_cancer_KM_curve.pdf   Lung_cancer_cumulative_divergence.pdf
 ##   GBSG2_KM_curve.pdf         GBSG2_cumulative_divergence.pdf
-## File names, page sizes, titles, subtitles and axis expressions follow the
-## original script; only the numbers change, because the estimator now uses the
-## corrected Greenwood scaling and the tau rule stated in Section 6.
-##
-## Requires ggplot2; survminer is used for the Kaplan-Meier panel when present.
+## 
 ## =============================================================================
 
 ## Input: a free-text label. Output: the original script's file-name slug.
