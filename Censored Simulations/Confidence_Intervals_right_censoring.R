@@ -10,10 +10,6 @@
 ##   its finite-sample behaviour; the code does not claim uniform validity near
 ##   the degenerate null F=G or when follow-up through tau is sparse.
 ##
-## Exploratory intervals (long output only):
-##   reflected/basic bootstrap and plug-in bias-centred normal intervals. Neither
-##   has a separate validity theorem in the paper and neither should be presented
-##   as a recommended inferential procedure.
 ##
 ## Full run:
 ##   Rscript Confidence_Intervals_right_censoring.R --mode=full \
@@ -21,8 +17,7 @@
 ## Quick reproducibility check:
 ##   Rscript Confidence_Intervals_right_censoring.R --mode=quick \
 ##     --output-dir=results/censored_ci_quick
-## Optional overrides: --B=2000 --R-boot=1000 --seed=123 --cores=1
-## Positional B and R_boot are accepted for backward compatibility.
+## 
 ## =============================================================================
 
 driver_args <- commandArgs(trailingOnly = FALSE)
