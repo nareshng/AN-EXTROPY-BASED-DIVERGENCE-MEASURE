@@ -1,5 +1,4 @@
 ## Cross-platform atomic file writers used by censored simulations.
-## Sourcing this file only defines functions and has no side effects.
 
 ## Inputs: temporary path, destination path, and human-readable file label.
 ## Output: destination path invisibly after atomic replacement.
