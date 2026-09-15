@@ -24,7 +24,7 @@
 ##   Rscript Point_estimation_right_censoring.R --mode=quick \
 ##     --output-dir=results/censored_point_quick
 ## Optional overrides: --B=2000 --seed=123
-## A single positional integer is accepted as a backward-compatible B override.
+## 
 ## =============================================================================
 
 driver_args <- commandArgs(trailingOnly = FALSE)
