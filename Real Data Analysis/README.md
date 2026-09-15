@@ -43,7 +43,7 @@ Rscript Censored_Real_Data_Analysis.R --bootstrap-reps=1000 --output-dir=out
 Outputs in `real_data_outputs/`: `Table11_formatted.csv` (the printed table),
 `Table11_real_data_full.csv` (all quantities, including the bias estimate, the
 bootstrap SD and the basic interval), `Table11_tau_sensitivity.csv`,
-`<dataset>_cumulative_divergence.csv`, `<dataset>_figure.pdf`,
+`<stem>_cumulative_divergence.csv`, the six figure PDFs above,
 `Section6_run_settings.txt` and `sessionInfo.txt`.
 
 The truncation point is stated explicitly rather than implied: the primary table
@@ -70,30 +70,26 @@ self-test compares them with the direct double sum.
 
 ### Figures
 
-`--figure-style=paper` is the default and reproduces the figures of the submitted
-manuscript with the same code as the original repository: `survminer::ggsurvplot`
-for the Kaplan–Meier panel (`conf.int = TRUE`, `pval = TRUE`, `theme_bw()`),
-`ggplot2::geom_step` for the squared survival difference and for the cumulative
-divergence, each with the dashed line at τ and the τ / D̂ subtitle, plus the
-combined `facet_wrap(~ Dataset, scales = "free")` figure. File names, page sizes
-(7.2 × 4.8 in, and 10 × 5.8 in for the combined figure) and axis expressions are
-those of the original script, and everything is written to
-`<output-dir>/figures/`:
+Each run writes exactly six PDFs, named for the manuscript, in the output
+directory (no other figure files, no subfolder):
 
 ```text
-<Dataset>_<group1>_vs_<group2>_KM_curve.pdf
-<Dataset>_<group1>_vs_<group2>_squared_difference.pdf
-<Dataset>_<group1>_vs_<group2>_cumulative_divergence.pdf
-three_cases_combined_cumulative_divergence.pdf
-three_cases_stepwise_divergence_values.csv
+Veteran_KM_curve.pdf        Veteran_cumulative_divergence.pdf
+Lung_cancer_KM_curve.pdf    Lung_cancer_cumulative_divergence.pdf
+GBSG2_KM_curve.pdf          GBSG2_cumulative_divergence.pdf
 ```
 
-This style needs `ggplot2` and `survminer`; without `survminer` the Kaplan–Meier
-panel is drawn with `ggplot2` alone and the script says so. `--figure-style=base`
-draws everything with base graphics and needs no extra package.
+`--figure-style=paper` (default) draws them as in the submitted manuscript:
+`survminer::ggsurvplot(conf.int = TRUE, pval = TRUE, ggtheme = theme_bw())` for
+the Kaplan–Meier panel and `ggplot2::geom_step` with a dashed line at τ and the
+τ / D̂ subtitle for the cumulative divergence, both 7.2 × 4.8 in. It needs
+`ggplot2` and `survminer`; without `survminer` the Kaplan–Meier panel is drawn
+with `ggplot2` alone and the script says so. `--figure-style=base` produces the
+same two files per data set with base graphics and no extra package, so the file
+names in the manuscript never change. `--no-figures` skips them.
 
 `--cumulative-geom` controls the cumulative panels: `step` (default) matches the
-submitted figures exactly, `line` is the exact rendering, since the integral of a
+submitted figures exactly; `line` is the exact rendering, since the integral of a
 squared step function is continuous and piecewise linear between the pooled jump
 times (the staircase misstates it between knots by about 4% of D̂ on the veteran
 data; endpoints and all reported numbers are unaffected).
@@ -116,20 +112,17 @@ value, which subtracts the diagonal terms and can therefore be slightly negative
 for near-identical images), `Image_inventory.csv` (size, pixel count and number of distinct
 intensities per file), `Figure4_MRI_images.pdf` and the run settings.
 
-Two points to reconcile with the manuscript. The repository ships images with
-indices 1, 2, 4 and 5, while the paper labels the three panels of Tables 12–14 as
-NT1/NT2/NT3; the third table corresponds to the files with index 4, so either
-rename the files or relabel the tables. And the estimator is evaluated exactly on
+The repository ships the nine images the paper uses, indices 1, 2 and 3, so the
+script's defaults match Tables 12, 13 and 14 directly. The estimator is evaluated exactly on
 the pooled distinct intensities: an 8-bit image has at most 256 distinct values,
 and a rank formula with `ties.method = "max"` does not evaluate equation (2.5)
 under that many ties. The exact values are
 
-| Index | NT–BT | NT–MT | BT–MT |
-|---|---|---|---|
-| 1 | 0.0358 | 0.0485 | 0.0118 |
-| 2 | 0.0239 | 0.0093 | 0.0460 |
-| 4 | 0.0229 | 0.0317 | 0.0232 |
-| 5 | 0.0162 | 0.0095 | 0.0083 |
+| Index | Table | NT–BT | NT–MT | BT–MT |
+|---|---|---|---|---|
+| 1 | 12 | 0.0358 | 0.0485 | 0.0118 |
+| 2 | 13 | 0.0239 | 0.0093 | 0.0460 |
+| 3 | 14 | 0.0229 | 0.0317 | 0.0232 |
 
 against 0.041 / 0.052 / 0.017, 0.027 / 0.014 / 0.050 and 0.026 / 0.039 / 0.031 in
 the submitted Tables 12–14. The ordering of the pairs is unchanged, so the

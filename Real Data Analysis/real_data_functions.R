@@ -135,13 +135,18 @@ rd_cumulative <- function(t1, s1, t2, s2, tau) {
   out
 }
 
-## Input: one analysis row, the samples, the step table, labels and a file path.
-## Output: TRUE invisibly; writes a two-panel PDF (Figures 1-3 of the paper).
-rd_figure <- function(row, t1, s1, t2, s2, steps, labels, file) {
-  grDevices::pdf(file, width = 10, height = 4.5)
-  on.exit(grDevices::dev.off(), add = TRUE)
-  graphics::par(mfrow = c(1, 2), mar = c(4.2, 4.4, 3, 1))
+## Input: one analysis row, the samples, the step table, labels, the output
+##        directory and the file stem.
+## Output: the two file paths invisibly; writes <stem>_KM_curve.pdf and
+##         <stem>_cumulative_divergence.pdf with base graphics (same names as the
+##         ggplot renderer, so the manuscript never has to change).
+rd_figure <- function(row, t1, s1, t2, s2, steps, labels, out_dir, stem) {
+  km_file <- file.path(out_dir, paste0(stem, "_KM_curve.pdf"))
+  cum_file <- file.path(out_dir, paste0(stem, "_cumulative_divergence.pdf"))
   group <- rep(1:2, c(length(t1), length(t2)))
+
+  grDevices::pdf(km_file, width = 7.2, height = 4.8)
+  graphics::par(mar = c(4.2, 4.4, 3, 1))
   fit <- survival::survfit(survival::Surv(c(t1, t2), c(s1, s2)) ~ group)
   plot(fit, col = c("firebrick", "steelblue"), lwd = 2, conf.int = TRUE,
        xlab = "Time", ylab = "Survival probability",
@@ -151,8 +156,11 @@ rd_figure <- function(row, t1, s1, t2, s2, steps, labels, file) {
                    lwd = 2, bty = "n")
   graphics::mtext(sprintf("log-rank p = %.3g", row$Logrank_p), side = 3, line = 0.2,
                   adj = 0, cex = 0.85)
-  ## The cumulative integral is piecewise LINEAR between the pooled knots,
-  ## so the curve is drawn with straight segments, not as a staircase.
+  grDevices::dev.off()
+
+  grDevices::pdf(cum_file, width = 7.2, height = 4.8)
+  graphics::par(mar = c(4.2, 4.4, 3, 1))
+  ## The cumulative integral is piecewise LINEAR between the pooled knots.
   plot(c(0, steps$right_time), c(0, steps$cumulative_D_tau), type = "l", lwd = 2,
        xlab = "Time",
        ylab = expression(integral((hat(bar(F))[n[1]](u) - hat(bar(G))[n[2]](u))^2 * du, 0, t)),
@@ -160,7 +168,8 @@ rd_figure <- function(row, t1, s1, t2, s2, steps, labels, file) {
   graphics::abline(v = row$tau, lty = 2)
   graphics::mtext(sprintf("tau = %.1f,  D = %.4f,  SE = %.4f", row$tau, row$D_tau_KM,
                           row$SE_Greenwood), side = 3, line = 0.2, adj = 0, cex = 0.85)
-  invisible(TRUE)
+  grDevices::dev.off()
+  invisible(c(km = km_file, cumulative = cum_file))
 }
 
 ## Input: none. Output: TRUE invisibly; stops if any deterministic check fails.

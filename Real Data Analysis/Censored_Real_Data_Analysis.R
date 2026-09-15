@@ -136,30 +136,26 @@ cases <- list(
        t2 = veteran$time[veteran$trt == 2], s2 = veteran$status[veteran$trt == 2],
        labels = c("Standard treatment", "Test treatment"),
        source = paste0("survival::veteran (survival ", utils::packageVersion("survival"), ")"),
-       horizon = CFG$fixed_horizons[1], seed = CFG$seed + 1L),
+       stem = "Veteran", horizon = CFG$fixed_horizons[1], seed = CFG$seed + 1L),
   list(name = "Lung cancer", comparison = "Male vs Female",
        t1 = lung$time[lung$sex == 1], s1 = lung_event[lung$sex == 1],
        t2 = lung$time[lung$sex == 2], s2 = lung_event[lung$sex == 2],
        labels = c("Male", "Female"),
        source = paste0("survival::lung (survival ", utils::packageVersion("survival"), ")"),
-       horizon = CFG$fixed_horizons[2], seed = CFG$seed + 2L),
+       stem = "Lung_cancer", horizon = CFG$fixed_horizons[2], seed = CFG$seed + 2L),
   list(name = "GBSG2 breast cancer", comparison = "No hormonal therapy vs Hormonal therapy",
        t1 = gb$time[gb$hormone == 0], s1 = gb$event[gb$hormone == 0],
        t2 = gb$time[gb$hormone == 1], s2 = gb$event[gb$hormone == 1],
        labels = c("No hormonal therapy", "Hormonal therapy"),
-       source = gb$source, horizon = CFG$fixed_horizons[3], seed = CFG$seed + 3L)
+       source = gb$source, stem = "GBSG2", horizon = CFG$fixed_horizons[3],
+       seed = CFG$seed + 3L)
 )
 
 out_dir <- CFG$output_dir
 if (!dir.exists(out_dir) && !dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)) {
   stop("Could not create the output directory: ", out_dir, call. = FALSE)
 }
-slug <- function(x) gsub("[^A-Za-z0-9]+", "_", x)
-fig_dir <- file.path(out_dir, "figures")
-if (CFG$figures && CFG$figure_style == "paper") {
-  dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
-}
-all_step_dfs <- list()
+
 
 ## ---- primary table (Table 11) -------------------------------------------------
 primary <- list()
@@ -172,17 +168,15 @@ for (k in seq_along(cases)) {
                     R_boot = CFG$bootstrap_reps, alpha = CFG$alpha, seed = cs$seed)
   row$Data_source <- cs$source
   steps <- rd_cumulative(cs$t1, cs$s1, cs$t2, cs$s2, tau)
-  utils::write.csv(steps, file.path(out_dir, paste0(slug(cs$name), "_cumulative_divergence.csv")),
+  utils::write.csv(steps, file.path(out_dir, paste0(cs$stem, "_cumulative_divergence.csv")),
                    row.names = FALSE)
   if (CFG$figures) {
     if (CFG$figure_style == "base") {
-      rd_figure(row, cs$t1, cs$s1, cs$t2, cs$s2, steps, cs$labels,
-                file.path(out_dir, paste0(slug(cs$name), "_figure.pdf")))
+      rd_figure(row, cs$t1, cs$s1, cs$t2, cs$s2, steps, cs$labels, out_dir, cs$stem)
     } else {
-      sdf <- fig_step_df(steps, cs$name, cs$comparison)
-      all_step_dfs[[length(all_step_dfs) + 1L]] <- sdf
-      fig_dataset_figures(row, cs$t1, cs$s1, cs$t2, cs$s2, sdf, cs$labels, fig_dir,
-                          cumulative_geom = CFG$cumulative_geom)
+      fig_dataset_figures(row, cs$t1, cs$s1, cs$t2, cs$s2,
+                          fig_step_df(steps, cs$name, cs$comparison), cs$labels,
+                          out_dir, cs$stem, cumulative_geom = CFG$cumulative_geom)
     }
   }
   primary[[k]] <- row
@@ -191,13 +185,6 @@ for (k in seq_along(cases)) {
 }
 primary <- do.call(rbind, primary)
 utils::write.csv(primary, file.path(out_dir, "Table11_real_data_full.csv"), row.names = FALSE)
-
-if (length(all_step_dfs)) {
-  stacked <- do.call(rbind, all_step_dfs)
-  utils::write.csv(stacked, file.path(out_dir, "three_cases_stepwise_divergence_values.csv"),
-                   row.names = FALSE)
-  fig_combined_figure(stacked, fig_dir, cumulative_geom = CFG$cumulative_geom)
-}
 
 printed <- data.frame(
   Dataset = primary$Dataset, Comparison = primary$Comparison,
