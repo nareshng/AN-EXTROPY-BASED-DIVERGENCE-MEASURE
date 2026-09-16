@@ -1,169 +1,221 @@
-# Section 6 — real-data analysis
+# Nonparametric Inference for an Extropy-Based Divergence Measure
 
-Two independent analyses, each runnable with one command from this folder.
+R code for reproducing every table and figure in
 
-| Paper output | Script | Command |
+> Garg, N., Dewan, I. and Kattumannil, S. K. *Nonparametric inference for an extropy-based divergence measure.* (Manuscript under revision, *Biometrical Journal*.)
+
+## Abstract
+
+Survival extropy, which quantifies the uncertainty associated with the remaining lifetime distribution, provides an information-theoretic perspective on survival behaviour. We consider a divergence measure based on survival extropy and derive its nonparametric estimators based on U-statistics, empirical distribution functions and kernel density estimation. We construct confidence intervals for the divergence measure using the jackknife empirical likelihood (JEL) method and the normal approximation method with a jackknife pseudo-value-based variance estimator. The divergence measure is also extended to randomly right-censored data, covering both point estimation and confidence interval construction. A Monte Carlo simulation study compares the proposed estimators with estimators of other divergence measures and evaluates the finite-sample performance of the proposed estimators and intervals for uncensored and censored data. The measure is illustrated on real survival data sets and on MRI image data.
+
+**Keywords:** Extropy; Jackknife empirical likelihood; Measure of divergence; U-statistics.
+
+---
+
+## Repository structure
+
+```text
+.
+├── README.md
+├── Uncensored Simulations/            Section 5.1–5.3 (Tables 1–6)
+│   ├── run_tables_1_6.R               one-command runner for Tables 1–6
+│   ├── validate_tables_1_6.R          source and output checks
+│   ├── test_tables_1_6_determinism.R  same-seed determinism test
+│   ├── Sim_RelativeMSE_comparison_Exponential_dist.R   Table 1
+│   ├── Sim_RelativeMSE_comparison_Weibull_dist.R       Table 2
+│   ├── Sim_MSE_Estimators_Exponential_dist.R           Table 3
+│   ├── Sim_MSE_Estimators_Weibull_dist.R               Table 4
+│   ├── Sim_Confidence_Intervals_Exponential_dist.R     Table 5
+│   ├── Sim_Confidence_Intervals_Weibull_dist.R         Table 6
+│   └── README.md
+├── Censored Simulations/              Section 5.4 (Tables 7–10)
+│   ├── run_tables_7_10.R              one-command runner for Tables 7–10
+│   ├── Point_estimation_right_censoring.R              Tables 7–8
+│   ├── Confidence_Intervals_right_censoring.R          Tables 9–10
+│   ├── Aggregate_right_censoring_results.R
+│   ├── km_functions.R                 Kaplan–Meier estimator, Greenwood variance, bootstrap
+│   ├── censored_simulation_helpers.R
+│   ├── diagnose_tables.R
+│   ├── atomic_io_functions.R
+│   └── README.md
+└── Real Data Analysis/                Section 6 (Table 11–14, Figures 1–4)
+    ├── Censored_Real_Data_Analysis.R  Table 11, Figures 1–3
+    ├── Image_based_Real_Data_Analysis.R               Tables 12–14, Figure 4
+    ├── real_data_functions.R
+    ├── image_functions.R
+    ├── figures_paper_style.R
+    ├── Images/                        NT1–3, BT1–3, MT1–3 (.jpg)
+    └── README.md
+```
+
+## Requirements
+
+| Software | Needed for | Version used |
 |---|---|---|
-| Table 11, Figures 1–3 | `Censored_Real_Data_Analysis.R` | `Rscript Censored_Real_Data_Analysis.R` |
-| Tables 12–14, Figure 4 | `Image_based_Real_Data_Analysis.R` | `Rscript Image_based_Real_Data_Analysis.R` |
+| R (≥ 4.1) | everything | 4.3.3 and 4.6.1 |
+| `emplik` **1.3-3** | Tables 5–6 (JEL) | 1.3-3 (exact version is checked) |
+| `survival` | Table 11, Figures 1–3 | 3.5-8 |
+| `TH.data` | Table 11 (GBSG2 data) | 1.1-2 |
+| `jpeg` | Tables 12–14, Figure 4 | 0.1-10 |
+| `ggplot2`, `survminer` | paper-style Figures 1–3 | 3.4.4, 0.4.9 |
 
-Shared code: `real_data_functions.R` (data loading, analysis, figures, checks) and
-`image_functions.R` (image reading and the divergence estimator). The censored
-analysis reads the estimator, the Greenwood variance and the bootstrap from
-`../Censored Simulations/km_functions.R`, so Section 6 and the Section 5.4
-simulations use one implementation.
+Tables 1–4 and 7–10 use base R only.
 
-## Software
-
-R (>= 4.1) and `survival` for Table 11; `jpeg` for Tables 12–14 (or `png` with
-`--extension=png`). `TH.data` is optional: `survival::gbsg` holds the same 686
-GBSG2 patients and is used automatically when `TH.data` is absent. Both scripts
-run in a few seconds; the default 5000 bootstrap resamples for Table 11 take
-about a minute in total.
-
-Check the installation before running anything:
-
-```bash
-Rscript Censored_Real_Data_Analysis.R --self-test   # 5 checks
-Rscript Image_based_Real_Data_Analysis.R --self-test # 10 checks
+```r
+install.packages(c("survival", "TH.data", "jpeg", "ggplot2", "survminer", "remotes"))
+remotes::install_version("emplik", version = "1.3-3",
+                         repos = "https://cloud.r-project.org", upgrade = "never")
 ```
 
-The censored self-test recomputes D and its Greenwood variance on the veteran
-data from `survival::survfit` output, and recomputes bootstrap draws one by one.
-The image self-test verifies the plug-in integral against its V-statistic form,
-the equation-(2.5) correction, behaviour under ties, symmetry, scale
-equivariance, grayscale conversion and deterministic resizing.
+`TH.data` is strongly recommended: without it the script falls back to `survival::gbsg` (same 686 patients, different row order), which changes the GBSG2 bootstrap interval in Table 11 in the second decimal.
 
-## Table 11
+## Quick check (a few minutes)
+
+Run from inside each folder. These use very few replications and only test that the code runs; their numbers are **not** the paper's results.
 
 ```bash
-Rscript Censored_Real_Data_Analysis.R                       # defaults
-Rscript Censored_Real_Data_Analysis.R --bootstrap-reps=1000 --output-dir=out
+cd "Uncensored Simulations"
+Rscript validate_tables_1_6.R
+Rscript run_tables_1_6.R --mode=quick
+
+cd "../Censored Simulations"
+Rscript run_tables_7_10.R --mode=quick --cores=2 --tidy
+
+cd "../Real Data Analysis"
+Rscript Censored_Real_Data_Analysis.R --self-test
+Rscript Image_based_Real_Data_Analysis.R --self-test
 ```
 
-Outputs in `real_data_outputs/`: `Table11_formatted.csv` (the printed table),
-`Table11_real_data_full.csv` (all quantities, including the bias estimate, the
-bootstrap SD and the basic interval), `Table11_tau_sensitivity.csv`,
-`<stem>_cumulative_divergence.csv`, the six figure PDFs above,
-`Section6_run_settings.txt` and `sessionInfo.txt`.
+## Reproducing the paper
 
-The truncation point is stated explicitly rather than implied: the primary table
-uses the **smaller** of the two 80th percentiles of the observed event times
-(`--tau-rule=min`, the rule stated in Section 6). Because the choice matters, the
-script also reports the larger percentile and a fixed calendar horizon for every
-data set; with 1000 resamples the three rules give
-
-| Data set | τ rule | τ | at risk at τ | D̂ | SE |
-|---|---|---|---|---|---|
-| Veteran | min / max / 180 days | 168.0 / 172.8 / 180 | (14,14) / (14,14) / (13,14) | 1.700 / 1.701 / 1.702 | 2.023 / 2.021 / 2.013 |
-| Lung | min / max / 365 days | 421.2 / 501.2 / 365 | (29,26) / (20,21) / (35,30) | 12.679 / 15.583 / 10.442 | 6.829 / 8.499 / 5.585 |
-| GBSG2 | min / max / 1825 days | 1165.2 / 1356.4 / 1825 | (185,126) / (141,109) / (63,60) | 5.365 / 8.023 / 15.536 | 3.990 / 5.611 / 10.088 |
-
-The quantile rule is `stats::quantile` type 7 (R's default). The type matters —
-for the veteran data the 80th percentile of the observed event times is 165, 168,
-174 or 177 under types 4, 7, 8 and 1 — so it is fixed in the code and recorded in
-`Section6_run_settings.txt`. Within a data set the three tau rules share the same
-bootstrap resamples, so the sensitivity comparison is paired.
-
-Section 6 of the paper must name the rule it reports. Standard errors follow
-Section 4.3 with the factors n₁ and n₂, i.e. Var(D̂) = 4σ̂²_F/n₁ + 4σ̂²_G/n₂; the
-self-test compares them with the direct double sum.
-
-### Figures
-
-Each run writes exactly six PDFs, named for the manuscript, in the output
-directory (no other figure files, no subfolder):
-
-```text
-Veteran_KM_curve.pdf        Veteran_cumulative_divergence.pdf
-Lung_cancer_KM_curve.pdf    Lung_cancer_cumulative_divergence.pdf
-GBSG2_KM_curve.pdf          GBSG2_cumulative_divergence.pdf
-```
-
-`--figure-style=paper` (default) draws them as in the submitted manuscript:
-`survminer::ggsurvplot(conf.int = TRUE, pval = TRUE, ggtheme = theme_bw())` for
-the Kaplan–Meier panel and `ggplot2::geom_step` with a dashed line at τ and the
-τ / D̂ subtitle for the cumulative divergence, both 7.2 × 4.8 in. It needs
-`ggplot2` and `survminer`; without `survminer` the Kaplan–Meier panel is drawn
-with `ggplot2` alone and the script says so. `--figure-style=base` produces the
-same two files per data set with base graphics and no extra package, so the file
-names in the manuscript never change. `--no-figures` skips them.
-
-`--cumulative-geom` controls the cumulative panels: `step` (default) matches the
-submitted figures exactly; `line` is the exact rendering, since the integral of a
-squared step function is continuous and piecewise linear between the pooled jump
-times (the staircase misstates it between knots by about 4% of D̂ on the veteran
-data; endpoints and all reported numbers are unaffected).
-
-The numbers in the figures change from the submitted version, because τ now
-follows the rule stated in Section 6 (the smaller 80th percentile) and the
-standard error uses the corrected Section 4.3 scaling. For the lung comparison
-the subtitle becomes τ = 421.2, D̂ = 12.6792 in place of τ = 501.2, D̂ = 15.5826.
-
-## Tables 12–14
+### Tables 1–6 (Sections 5.1–5.3)
 
 ```bash
+cd "Uncensored Simulations"
+Rscript run_tables_1_6.R --mode=full                 # all six tables
+Rscript run_tables_1_6.R --mode=full --tables=5,6    # a subset
+```
+
+Each table runs in a clean R process with 2000 Monte Carlo replications. Outputs are written to `results/tables_1_6/full/table_N/`, one folder per table: the raw CSV, `Table_N_manuscript.csv` (rounded as printed), the run log, `run_manifest.csv` (seeds, versions, MD5 checksums) and `sessionInfo.txt`. Existing results are not overwritten unless `--overwrite` is given.
+
+| Table | Content | Script | Seed | Quadrature nodes |
+|---|---|---|---|---|
+| 1 | Relative MSE of kernel estimators of D, D_CC, KL (exponential) | `Sim_RelativeMSE_comparison_Exponential_dist.R` | 2024 | 200 |
+| 2 | Same, Weibull | `Sim_RelativeMSE_comparison_Weibull_dist.R` | 2024 | 200 |
+| 3 | MSE of kernel, empirical and U-statistic estimators (exponential) | `Sim_MSE_Estimators_Exponential_dist.R` | 2026 | 80 |
+| 4 | Same, Weibull | `Sim_MSE_Estimators_Weibull_dist.R` | 2024 | 80 |
+| 5 | CP and AL of JEL, NA and empirical intervals (exponential) | `Sim_Confidence_Intervals_Exponential_dist.R` | 2026 | – |
+| 6 | Same, Weibull | `Sim_Confidence_Intervals_Weibull_dist.R` | 2026 | – |
+
+Notes:
+
+* The JEL interval uses the jackknife pseudo-values of Jing, Yuan and Zhou (2009, *JASA* 104, 1224–1232) for two-sample U-statistics, with the leave-one-out statistic evaluated with the full-sample normalising constants and centred at E[V_k] from their eq. (14) (manuscript eq. 3.8).
+* The KL kernel estimator bounds the density estimates below by 10⁻¹², as stated in Section 5.1.
+* Parameterisation: exponential λ is a **rate** (`rexp(rate = λ)`); Weibull (k, λ) is (**shape**, **scale**) (`rweibull(shape = k, scale = λ)`).
+* On Windows, run the individual scripts with the environment variables `EXTROPY_MC_REPS`, `EXTROPY_SEED` and `EXTROPY_OUTPUT_DIR` set, because `system2(env = …)` in the runner is not supported for `Rscript` on Windows. Example (PowerShell):
+  `$env:EXTROPY_MC_REPS=2000; $env:EXTROPY_SEED=2026; Rscript Sim_Confidence_Intervals_Weibull_dist.R`
+
+### Tables 7–10 (Section 5.4, right censoring)
+
+```bash
+cd "Censored Simulations"
+Rscript run_tables_7_10.R --mode=full --cores=4 --tidy
+```
+
+Full mode uses 2000 Monte Carlo replications per cell, 1000 bootstrap resamples for Tables 9–10, point-estimation seed 5401 and confidence-interval seed 5402. Each cell has its own seeds, so results are identical for any `--cores` value and for runs split across machines. With `--tidy`, the four tables are written to `paper_tables/`:
+
+| Table | Output file |
+|---|---|
+| 7 | `Table7_RelMSE_Exponential.csv` (column `D_KM`) |
+| 8 | `Table8_RelMSE_Weibull.csv` (column `D_KM`) |
+| 9 | `Table9_CI_Exponential.csv` |
+| 10 | `Table10_CI_Weibull.csv` |
+
+The CSVs contain more columns than the printed tables:
+
+* `DCC_KM` is a Cox–Czanner comparator that is not reported in the paper.
+* `Valid_%` is the percentage of replications in which an interval could be computed.
+* `*_MCSE` columns give Monte Carlo standard errors.
+
+Coverage in Tables 9–10 is computed over all 2000 replications. A replication in which no interval is available counts as non-coverage; this happens when a group has no subject at risk at τ or has a terminal event before τ.
+
+Long runs can be split and resumed; see `Censored Simulations/README.md` (`--task-ids`, `--aggregate-only`).
+
+### Table 11 and Figures 1–3 (Section 6)
+
+```bash
+cd "Real Data Analysis"
+Rscript Censored_Real_Data_Analysis.R
+```
+
+* Defaults: τ is the smaller of the two 80th percentiles of the observed event times, 5000 bootstrap resamples, seed 2026.
+* Outputs go to `real_data_outputs/`:
+  * `Table11_formatted.csv`: the printed table, except that the normal limits are not truncated at 0 in the CSV.
+  * `Table11_real_data_full.csv`
+  * `Table11_tau_sensitivity.csv`
+  * Figure PDFs
+  * `sessionInfo.txt`
+
+Data sources, all loaded from R packages:
+
+* Veteran lung cancer: `survival::veteran` (Kalbfleisch and Prentice, 1980).
+* Lung cancer (NCCTG): `survival::lung` (Loprinzi et al., 1994).
+* GBSG2: `TH.data::GBSG2` (Schumacher et al., 1994).
+
+### Tables 12–14 and Figure 4 (Section 6.1)
+
+```bash
+cd "Real Data Analysis"
 Rscript Image_based_Real_Data_Analysis.R
-Rscript Image_based_Real_Data_Analysis.R --indices=1,2,3
-Rscript Image_based_Real_Data_Analysis.R --resize=none       # sensitivity analysis
-Rscript Image_based_Real_Data_Analysis.R --estimator=plugin  # diagnostic only
 ```
 
-The default analysis now implements the preprocessing and estimator that must
-be stated in the manuscript:
+* The script reads the nine images in `Images/`: no tumour (NT), benign tumour (BT) and malignant tumour (MT). They are taken from the Kaggle brain-tumour MRI dataset cited in the paper.
+* It converts each image to grayscale in [0, 1] and computes the tie-safe empirical estimate for each pair.
+* Image indices 1, 2 and 3 correspond to Tables 12, 13 and 14.
+* Outputs are written to `image_outputs/`.
 
-- every image is converted to grayscale and resized to **227 × 255 pixels
-  (width × height)** by bilinear interpolation;
-- the primary table value is the empirical estimator in equation (2.5),
-  evaluated through the tie-safe identity
-  `D_Emp = D_plugin - mean(x)/n1 - mean(y)/n2`;
-- the nonnegative plug-in integral is retained only as an explicitly labelled
-  diagnostic; and
-- Figure 4 is written with rows `NT`, `BT`, `MT` and columns equal to the image
-  indices, matching the manuscript ordering.
+## Approximate run times
 
-The equation-(2.5) estimator can be slightly negative in finite samples. The
-script reports such values rather than truncating or silently replacing them by
-the plug-in estimator.
+Measured on a single core (R 4.3.3, Linux). Other machines will differ.
 
-Outputs in `image_outputs/` are:
+| Step | Time |
+|---|---|
+| Tables 1 and 2 (each, including the quadrature check) | about 5–10 min |
+| Tables 5 and 6 (each) | about 15–25 min |
+| Tables 7–8 | about 5 min |
+| Tables 9–10 | about 2–3 CPU-hours (use `--cores`) |
+| Table 11 and Figures 1–3 | under 1 min |
+| Tables 12–14 and Figure 4 | a few seconds |
 
-- `Divergence_matrix_index<k>.csv`: the selected primary estimator; under the
-  default settings this is equation (2.5);
-- `Divergence_matrix_index<k>_plugin.csv`: the plug-in diagnostic;
-- `Image_divergences_long.csv`: both labelled estimators at full precision;
-- `Image_inventory.csv`: input MD5 checksum, original and analysed dimensions,
-  resize status, pixel counts and intensity summaries;
-- `Figure4_MRI_images.pdf`, `Section6_1_run_settings.txt` and `sessionInfo.txt`.
+## Reproducibility checks
 
-Do not copy the old values in Tables 12–14 after this preprocessing correction.
-Run the script and update the manuscript from `Divergence_matrix_index<k>.csv`.
-State the 227 × 255 target and bilinear interpolation explicitly in Section 6.1.
-The run settings and inventory should be archived with those tables.
+The following outputs were regenerated from this repository and compared with the printed tables value by value:
 
-### Image provenance
+* Tables 1–8
+* Table 11
+* Tables 12–14
+* A subset of cells of Tables 9–10
 
-For a reproducible paper, add `Images/image_manifest.csv` with one row for each
-image. The required column is `file`; the recommended fields are
-`analysis_group`, `analysis_index`, `source_dataset_class`, `source_record_id`,
-`source_url` and `selection_rule`. For example, the header can be
+To verify determinism of Tables 1–6:
 
-```text
-file,analysis_group,analysis_index,source_dataset_class,source_record_id,source_url,selection_rule
+```bash
+cd "Uncensored Simulations"
+Rscript test_tables_1_6_determinism.R --tables=3,4
 ```
 
-The script checks the filename/group/index mapping and appends all manifest
-fields to `Image_inventory.csv`. If no manifest is supplied, it records file
-checksums but warns that the dataset labels and source mapping cannot be
-verified. Do not describe `BT` and `MT` as benign and malignant unless that
-mapping is supported by the original dataset metadata.
+Random-number settings are fixed explicitly (`RNGkind("Mersenne-Twister", "Inversion", "Rejection")`), so results do not depend on the R version's default sampler.
 
-### Interpretation limitation
+## Citation
 
-This is a descriptive comparison of marginal pixel-intensity distributions.
-Pixels from one image are spatially dependent, flattening discards tumour
-location and texture, and three manually selected images per label are not a
-representative sample. Consequently, these tables do not establish diagnostic
-accuracy, class separation or a biological difference. In particular, no text
-should claim that every normal–tumour divergence exceeds every tumour–tumour
-divergence unless the updated tables actually show that ordering.
+```bibtex
+@article{GargDewanKattumannil,
+  author  = {Garg, Naresh and Dewan, Isha and Kattumannil, Sudheesh Kumar},
+  title   = {Nonparametric Inference for an Extropy-Based Divergence Measure},
+  journal = {Biometrical Journal},
+  note    = {Under revision}
+}
+```
+
+## Contact
+
+Naresh Garg — garg.naresh22@gmail.com
