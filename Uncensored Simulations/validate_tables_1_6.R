@@ -270,10 +270,10 @@ validate_source_files <- function(base_dir = script_location(), quiet = FALSE) {
 
       compact <- gsub("[[:space:]]+", "", text)
       jel_signatures <- c(
-        "cx<-(n/(n-2))*((n2-1)*(2/n1)-1)",
-        "cy<-(n/(n-2))*((n1-1)*(2/n2)-1)",
-        "V_JEL_X<-n*sc$D_Ustat-(n-1)*loo$D_Ustat_loo_X",
-        "V_JEL_Y<-n*sc$D_Ustat-(n-1)*loo$D_Ustat_loo_Y",
+        "cx<-(n/(n-4))*((n2-1)*(2/n1)-1)",
+        "cy<-(n/(n-4))*((n1-1)*(2/n2)-1)",
+        "T_loo_X<-(n/(n-4))*((n1-2)/n1)*loo_X",
+        "T_loo_Y<-(n/(n-4))*((n2-2)/n2)*loo_Y",
         "emplik::el.test(w,mu=0)"
       )
       missing_jel <- jel_signatures[

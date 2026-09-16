@@ -182,13 +182,40 @@ loo_estimates <- function(sc) {
 # 4. Expected pseudo-values for JEL
 # =============================================================================
 
+# Jing, Yuan and Zhou (2009, JASA, eq. 14) for a two-sample U-statistic with
+# kernel degrees (m1, m2) = (2, 2), m = m1 + m2 = 4:
+#   E[V_k] = theta * n/(n - m) * [(n2 - 1) m1/n1 - (m2 - 1)],  k = 1, ..., n1
+#   E[V_k] = theta * n/(n - m) * [(n1 - 1) m2/n2 - (m1 - 1)],  k = n1 + 1, ..., n
+# This holds for the JYZ pseudo-values built in jyz_pseudo_values() below.
 EV_vec <- function(theta, n1, n2) {
   n <- n1 + n2
   
-  cx <- (n / (n - 2)) * ((n2 - 1) * (2 / n1) - 1)
-  cy <- (n / (n - 2)) * ((n1 - 1) * (2 / n2) - 1)
+  cx <- (n / (n - 4)) * ((n2 - 1) * (2 / n1) - 1)
+  cy <- (n / (n - 4)) * ((n1 - 1) * (2 / n2) - 1)
   
   c(rep(cx * theta, n1), rep(cy * theta, n2))
+}
+
+
+# JYZ (2009) pseudo-values V_i = n T_n - (n - 1) T_{n-1}^{(-i)}, where T is the
+# pooled-sample representation of the two-sample U-statistic (JYZ eq. 13) with
+# the full-sample normalising constants kept fixed. Evaluating T at the n - 1
+# remaining observations gives
+#   T_{n-1}^{(-i)} = n/(n - 4) * (n1 - 2)/n1 * U^{(-i)},  if W_i is an X,
+#   T_{n-1}^{(-i)} = n/(n - 4) * (n2 - 2)/n2 * U^{(-i)},  if W_i is a Y,
+# with U^{(-i)} the two-sample U-statistic of the reduced samples.
+# These pseudo-values satisfy mean(V) = D_Ustat exactly (eq. 3.6).
+jyz_pseudo_values <- function(D_Ustat, loo_X, loo_Y, n1, n2) {
+  n <- n1 + n2
+  if (n <= 4L) {
+    stop("JYZ pseudo-values require n1 + n2 > 4.")
+  }
+  
+  T_loo_X <- (n / (n - 4)) * ((n1 - 2) / n1) * loo_X
+  T_loo_Y <- (n / (n - 4)) * ((n2 - 2) / n2) * loo_Y
+  
+  c(n * D_Ustat - (n - 1) * T_loo_X,
+    n * D_Ustat - (n - 1) * T_loo_Y)
 }
 
 
@@ -317,9 +344,10 @@ all_CIs <- function(
   loo <- loo_estimates(sc)
   
   # U-statistic pseudo-values for JEL
-  V_JEL_X <- n * sc$D_Ustat - (n - 1) * loo$D_Ustat_loo_X
-  V_JEL_Y <- n * sc$D_Ustat - (n - 1) * loo$D_Ustat_loo_Y
-  V_JEL <- c(V_JEL_X, V_JEL_Y)
+  # (JYZ 2009 construction; see jyz_pseudo_values())
+  V_JEL <- jyz_pseudo_values(
+    sc$D_Ustat, loo$D_Ustat_loo_X, loo$D_Ustat_loo_Y, n1, n2
+  )
   
   # U-statistic pseudo-values for normal approximation
   V_NA_X <- n1 * sc$D_Ustat - (n1 - 1) * loo$D_Ustat_loo_X
