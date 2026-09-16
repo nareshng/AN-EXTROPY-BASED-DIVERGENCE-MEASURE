@@ -12,7 +12,14 @@
 # Relative MSE:
 # RelMSE = MSE / true_value^2
 #
+# Stabilized KL estimator:
+# f_eps = max(f_hat, 1e-12), g_eps = max(g_hat, 1e-12)
+# KL_eps = integral f_eps * log(f_eps / g_eps)
+#
 # =============================================================================
+
+KL_DENSITY_FLOOR <- 1e-12
+WEIBULL_TAIL_PROBABILITY <- 1e-12
 
 
 # =============================================================================
@@ -98,7 +105,8 @@ calc_all_kernel <- function(
     Y,
     gl,
     upper = NULL,
-    tail_mult = 10
+    tail_mult = 10,
+    eps = KL_DENSITY_FLOOR
 ) {
   h1 <- silverman_bw(X)
   h2 <- silverman_bw(Y)
@@ -106,6 +114,9 @@ calc_all_kernel <- function(
  
   if (!is.finite(h1) || h1 <= 0 || !is.finite(h2) || h2 <= 0) {
     return(c(D = NA_real_, DCC = NA_real_, KL = NA_real_))
+  }
+  if (!is.finite(eps) || eps <= 0) {
+    stop("eps must be a finite positive number.")
   }
   
   if (is.null(upper)) {
@@ -134,9 +145,11 @@ calc_all_kernel <- function(
   # D_CC estimator
   DCC_hat <- sum(w_grid * abs(Fb * g_hat - Gb * f_hat))
   
-  # KL estimator.  log densities are evaluated by log-sum-exp above, so this
-  # is the KDE plug-in estimator in the paper, with no arbitrary density floor.
-  KL_hat <- sum(w_grid * f_hat * (log_f_hat - log_g_hat))
+  # Stabilized finite-domain KL estimator used for the manuscript table.
+  # The floor is explicit because it changes the finite-sample estimator.
+  f_safe <- pmax(f_hat, eps)
+  g_safe <- pmax(g_hat, eps)
+  KL_hat <- sum(w_grid * f_safe * log(f_safe / g_safe))
   
   c(
     D = D_hat,
@@ -278,7 +291,8 @@ simulate_one_cell <- function(
     n2,
     iterations,
     gl,
-    tail_mult = 10
+    tail_mult = 10,
+    eps = KL_DENSITY_FLOOR
 ) {
   tD <- true_D_weibull(shape1, scale1, shape2, scale2)
   tDCC <- true_DCC_weibull(shape1, scale1, shape2, scale2)
@@ -287,6 +301,20 @@ simulate_one_cell <- function(
   D_est <- numeric(iterations)
   DCC_est <- numeric(iterations)
   KL_est <- numeric(iterations)
+
+  # Retain the original deterministic upper limit used for Table 2.
+  q_upper <- max(
+    qweibull(
+      1 - WEIBULL_TAIL_PROBABILITY,
+      shape = shape1,
+      scale = scale1
+    ),
+    qweibull(
+      1 - WEIBULL_TAIL_PROBABILITY,
+      shape = shape2,
+      scale = scale2
+    )
+  )
   
   for (b in seq_len(iterations)) {
     X <- rweibull(n1, shape = shape1, scale = scale1)
@@ -295,19 +323,19 @@ simulate_one_cell <- function(
     h1 <- silverman_bw(X)
     h2 <- silverman_bw(Y)
     
-    # The integrands contain the sample KDEs, not the true Weibull densities.
-    # Their effective support ends a fixed number of bandwidths beyond the
-    # largest observation.  A theoretical extreme Weibull quantile can be
-    # hundreds of times larger and leaves almost no quadrature nodes where the
-    # KDE has mass, particularly when shape < 1.
-    upper_b <- max(c(X, Y)) + tail_mult * max(h1, h2)
+    upper_b <- max(
+      q_upper,
+      max(c(X, Y)) + tail_mult * max(h1, h2),
+      na.rm = TRUE
+    )
     
     est <- calc_all_kernel(
       X = X,
       Y = Y,
       gl = gl,
       upper = upper_b,
-      tail_mult = tail_mult
+      tail_mult = tail_mult,
+      eps = eps
     )
     
     D_est[b] <- est["D"]
@@ -359,8 +387,9 @@ simulate_one_cell <- function(
 
 run_simulation <- function(
     iterations = 2000,
-    n_quad = 200,
+    n_quad = 100,
     tail_mult = 10,
+    eps = KL_DENSITY_FLOOR,
     seed = 2024,
     verbose = TRUE
 ) {
@@ -425,7 +454,8 @@ run_simulation <- function(
         n2 = n2,
         iterations = iterations,
         gl = gl,
-        tail_mult = tail_mult
+        tail_mult = tail_mult,
+        eps = eps
       )
       
       out[[idx]] <- data.frame(
@@ -447,6 +477,8 @@ run_simulation <- function(
         RelMSE_D = sim["RelMSE_D"],
         RelMSE_DCC = sim["RelMSE_DCC"],
         RelMSE_KL = sim["RelMSE_KL"],
+
+        KL_epsilon = eps,
         
         NA_D = sim["NA_D"],
         NA_DCC = sim["NA_DCC"],
@@ -579,7 +611,8 @@ read_env_flag <- function(name, default = FALSE) {
 
 mc_reps <- read_env_integer("EXTROPY_MC_REPS", 2000L)
 paper_seed <- read_env_integer("EXTROPY_SEED", 2024L, minimum = 0L)
-n_quad <- read_env_integer("EXTROPY_N_QUAD", 200L, minimum = 2L)
+n_quad <- read_env_integer("EXTROPY_N_QUAD", 100L, minimum = 2L)
+kl_eps <- KL_DENSITY_FLOOR
 verbose <- read_env_flag("EXTROPY_VERBOSE", TRUE)
 run_quad_check <- read_env_flag("EXTROPY_QUAD_CHECK", FALSE)
 output_dir <- Sys.getenv("EXTROPY_OUTPUT_DIR", unset = ".")
@@ -594,8 +627,11 @@ if (!dir.exists(output_dir) &&
 
 if (verbose) {
   cat(sprintf(
-    "Table 2 configuration: B=%d, seed=%d, Gauss-Legendre nodes=%d\n",
-    mc_reps, paper_seed, n_quad
+    paste0(
+      "Table 2 configuration: B=%d, seed=%d, ",
+      "Gauss-Legendre nodes=%d, KL density floor=%.1e\n"
+    ),
+    mc_reps, paper_seed, n_quad, kl_eps
   ))
 }
 
@@ -603,6 +639,7 @@ results_weibull <- run_simulation(
   iterations = mc_reps,
   n_quad = n_quad,
   tail_mult = 10,
+  eps = kl_eps,
   seed = paper_seed,
   verbose = verbose
 )
@@ -635,6 +672,7 @@ if (run_quad_check) {
     iterations = mc_reps,
     n_quad = fine_n_quad,
     tail_mult = 10,
+    eps = kl_eps,
     seed = paper_seed,
     verbose = FALSE
   )
