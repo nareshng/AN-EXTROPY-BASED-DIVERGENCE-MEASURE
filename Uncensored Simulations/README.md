@@ -2,7 +2,7 @@
 
 This folder contains the six standalone simulation scripts used for manuscript
 Tables 1--6 and a single deterministic runner. The statistical functions remain
-inside their original scripts; the runner only supplies replication count, seed,
+inside their scripts; the runner only supplies replication count, seed,
 verbosity, and output location through environment variables.
 
 ## Requirements
@@ -40,8 +40,6 @@ Rscript validate_tables_1_6.R
 
 The validator checks that every script parses, uses the shared runner interface,
 contains no machine-specific working directory, and names the expected CSV. For
-Tables 5--6 it also verifies that the kernel-bootstrap CI is absent and that the
-existing JEL construction retains its defining formulas.
 
 ## Quick smoke test
 
@@ -50,7 +48,7 @@ Rscript run_tables_1_6.R --mode=quick
 ```
 
 Quick mode uses only 20 Monte Carlo replications per scenario. It tests execution
-and output structure; its numerical values must not be reported in the paper.
+and output structure.
 Verify that two independent same-seed quick runs are identical with:
 
 ```bash
@@ -93,8 +91,7 @@ manifest rather than deleting metadata from earlier table runs.
 | 6 | Three confidence intervals, Weibull | `Sim_Confidence_Intervals_Weibull_dist.R` | 2026 | `Coverage_and_Average_Length_Section_5_3_Weibull.csv` |
 
 Tables 5--6 contain JEL, U-statistic normal, and empirical-estimator normal
-intervals only. The kernel-bootstrap confidence interval is intentionally absent.
-The JEL formulas and settings are unchanged from the supplied Table 5--6 code.
+intervals.
 
 ## Output layout and audit files
 
@@ -113,14 +110,7 @@ results/tables_1_6/full/
 ```
 
 Each table directory contains the unrounded raw CSV, a rounded
-`Table_N_manuscript.csv`, and `run.log`. Tables 1--2 manuscript files use one row
-per measure and parameter configuration, with sample-size columns containing
-relative MSE rounded to four decimals. Tables 3--4 use one row per estimator and
-parameter configuration and contain ordinary MSE only, rounded to four decimals.
-Tables 5--6 contain only JEL, normal U-statistic, and
-normal empirical CP/AL, with CP expressed as a percentage to one decimal and AL
-rounded to three decimals. The manifest records the mode, replications, seeds,
-source-file MD5 checksums, output paths, and both output MD5 checksums.
+`Table_N_manuscript.csv`, and `run.log`. 
 Full Table 1--2 directories additionally contain the same-sample quadrature-check
 CSV and its checksum is recorded in the manifest.
 `sessionInfo.txt` records the R and package environment. Validate a
@@ -131,6 +121,5 @@ Rscript validate_tables_1_6.R \
   --output-dir=results/tables_1_6/full
 ```
 
-Run the full workflow on a clean R installation before using the generated values
-in the manuscript. Commit the full CSVs, manifest, logs, and `sessionInfo.txt`
+Run the full workflow on a clean R installation. Commit the full CSVs, manifest, logs, and `sessionInfo.txt`
 with the revision archive.
