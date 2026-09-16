@@ -1,17 +1,18 @@
-# =============================================================================
-
-
-# Divergence for exponential distributions
-#
-# MSE and Relative MSE comparison of Kernel, Empirical, and U-statistic estimators
-#
-# D(F,G) = integral_0^inf [Fbar(x) - Gbar(x)]^2 dx
-#
-# =============================================================================
 
 
 # =============================================================================
-# 1. Code
+# Divergence for Weibull distributions
+#
+# For X ~ Weibull(shape1, scale1), Y ~ Weibull(shape2, scale2),
+#
+# # MSE comparison of Kernel, Empirical, and U-statistic estimators
+#
+#
+# =============================================================================
+
+
+# =============================================================================
+# 1. Gauss-Legendre quadrature
 # =============================================================================
 
 gauss_legendre <- function(n) {
@@ -39,7 +40,7 @@ gauss_legendre <- function(n) {
 
 
 # =============================================================================
-# 2. bandwidth rule
+# 2. Bandwidth rule
 # =============================================================================
 
 bw_original <- function(z) {
@@ -98,8 +99,6 @@ calc_Emp <- function(X, Y) {
   combined <- c(X, Y)
   lab <- c(rep(1L, n1), rep(2L, n2))
   
-  # Average ranks are safer for real data.
-  # For continuous exponential simulation, ties occur with probability zero.
   pooled_rank <- rank(combined, ties.method = "average")
   
   S <- pooled_rank[lab == 1L][order(X)]
@@ -116,7 +115,7 @@ calc_Emp <- function(X, Y) {
 
 
 # =============================================================================
-# 5. Kernel estimator 
+# 5. Kernel estimator using Gauss-Legendre quadrature
 # =============================================================================
 
 calc_Kernel_GL <- function(X, Y, gl, upper = NULL) {
@@ -126,15 +125,10 @@ calc_Kernel_GL <- function(X, Y, gl, upper = NULL) {
   h1 <- bw_original(X)
   h2 <- bw_original(Y)
   
-  # This keeps the original bandwidth formula.
-  # The check below only prevents numerical crash in degenerate cases.
-  # For exponential simulations, h1 and h2 should be positive almost surely.
   if (!is.finite(h1) || h1 <= 0 || !is.finite(h2) || h2 <= 0) {
     return(NA_real_)
   }
   
-  # Finite upper bound approximation for integral_0^inf.
-  # This is much faster than integrate(..., 0, Inf).
   if (is.null(upper)) {
     upper <- max(c(X, Y)) + 8 * max(h1, h2)
   }
@@ -143,7 +137,7 @@ calc_Kernel_GL <- function(X, Y, gl, upper = NULL) {
     return(NA_real_)
   }
   
-  # Transform Gauss-Legendre nodes from [-1,1] to [0, upper]
+  # Transform Gauss-Legendre nodes from [-1, 1] to [0, upper]
   xg <- 0.5 * upper * (gl$x + 1)
   wg <- 0.5 * upper * gl$w
   
@@ -155,37 +149,81 @@ calc_Kernel_GL <- function(X, Y, gl, upper = NULL) {
 
 
 # =============================================================================
-# 6. True divergence for exponential distributions
+# 6. True divergence for Weibull distributions
 # =============================================================================
 
-true_D_exp <- function(lambda1, lambda2) {
-  1 / (2 * lambda1) + 1 / (2 * lambda2) - 2 / (lambda1 + lambda2)
+true_D_weibull <- function(shape1, scale1, shape2, scale2) {
+  if (shape1 <= 0 || shape2 <= 0 || scale1 <= 0 || scale2 <= 0) {
+    stop("All Weibull shape and scale parameters must be positive.")
+  }
+  
+  # Integral of S_X(x)^2 dx
+  term1 <- scale1 * gamma(1 + 1 / shape1) / (2^(1 / shape1))
+  
+  # Integral of S_Y(x)^2 dx
+  term2 <- scale2 * gamma(1 + 1 / shape2) / (2^(1 / shape2))
+  
+  # Integral of S_X(x) S_Y(x) dx
+  if (abs(shape1 - shape2) < 1e-12) {
+    shape <- shape1
+    c_cross <- scale1^(-shape) + scale2^(-shape)
+    cross <- gamma(1 + 1 / shape) / (c_cross^(1 / shape))
+  } else {
+    cross_integrand <- function(x) {
+      exp(- (x / scale1)^shape1 - (x / scale2)^shape2)
+    }
+    
+    cross <- integrate(
+      cross_integrand,
+      lower = 0,
+      upper = Inf,
+      rel.tol = 1e-10,
+      subdivisions = 1000
+    )$value
+  }
+  
+  term1 + term2 - 2 * cross
 }
 
 
 # =============================================================================
-# 7. simulation cell
+# 7. One simulation cell
 # =============================================================================
 
-simulate_one_cell <- function(lambda1, lambda2, n1, n2, iterations, gl,
+simulate_one_cell <- function(shape1, scale1, shape2, scale2,
+                              n1, n2, iterations, gl,
                               gl_check = NULL,
                               quadrature_tolerance = 0.01) {
-  true_D <- true_D_exp(lambda1, lambda2)
+  
+  true_D <- true_D_weibull(shape1, scale1, shape2, scale2)
   
   ker_est <- numeric(iterations)
   emp_est <- numeric(iterations)
   ust_est <- numeric(iterations)
   
   for (b in seq_len(iterations)) {
-    X <- rexp(n1, rate = lambda1)
-    Y <- rexp(n2, rate = lambda2)
+    X <- rweibull(n1, shape = shape1, scale = scale1)
+    Y <- rweibull(n2, shape = shape2, scale = scale2)
     
-    ker_est[b] <- calc_Kernel_GL(X, Y, gl)
+    h1 <- bw_original(X)
+    h2 <- bw_original(Y)
+    
+    # The estimated survival curves are Gaussian-kernel mixtures, so their
+    # relevant numerical support is determined by the observed samples and
+    # bandwidths, not by an extreme quantile of the generating distribution.
+    # In particular, qweibull(1 - 1e-12, shape = 0.5) is about 763; mapping
+    # only 80 Gauss-Legendre nodes over that range gives poor resolution near
+    # zero. Using eight bandwidths beyond the largest observation makes the
+    # omitted Gaussian-kernel tail negligible while keeping the quadrature
+    # stable.
+    upper_b <- max(c(X, Y)) + 8 * max(h1, h2)
+    
+    ker_est[b] <- calc_Kernel_GL(X, Y, gl, upper = upper_b)
 
     # Same-data sensitivity check: changing the quadrature rule must not be
     # confounded with a new Monte Carlo sample or a different random seed.
     if (b == 1L && !is.null(gl_check)) {
-      ker_check <- calc_Kernel_GL(X, Y, gl_check)
+      ker_check <- calc_Kernel_GL(X, Y, gl_check, upper = upper_b)
       check_scale <- max(abs(ker_check), abs(true_D), sqrt(.Machine$double.eps))
       check_difference <- abs(ker_est[b] - ker_check) / check_scale
 
@@ -194,10 +232,11 @@ simulate_one_cell <- function(lambda1, lambda2, n1, n2, iterations, gl,
         stop(sprintf(
           paste0(
             "Gauss-Legendre sensitivity check failed (relative difference %.4g) ",
-            "for lambda1=%g, lambda2=%g, n1=%d, n2=%d. ",
+            "for shape1=%g, scale1=%g, shape2=%g, scale2=%g, n1=%d, n2=%d. ",
             "Increase EXTROPY_N_QUAD."
           ),
-          check_difference, lambda1, lambda2, n1, n2
+          check_difference,
+          shape1, scale1, shape2, scale2, n1, n2
         ))
       }
     }
@@ -206,22 +245,29 @@ simulate_one_cell <- function(lambda1, lambda2, n1, n2, iterations, gl,
     ust_est[b] <- calc_Ustat(X, Y)
   }
   
+  valid_ker <- is.finite(ker_est)
+
   # All B planned Monte Carlo replications must contribute to each MSE.
   # Do not silently discard a failed estimate, since doing so changes the
   # Monte Carlo estimand and can make a table irreproducible.
-  valid_ker <- is.finite(ker_est)
-
   if (!all(valid_ker)) {
     stop(sprintf(
-      "Kernel estimation failed in %d of %d replications for lambda1=%g, lambda2=%g, n1=%d, n2=%d.",
-      sum(!valid_ker), iterations, lambda1, lambda2, n1, n2
+      paste0(
+        "Kernel estimation failed in %d of %d replications for ",
+        "shape1=%g, scale1=%g, shape2=%g, scale2=%g, n1=%d, n2=%d."
+      ),
+      sum(!valid_ker), iterations,
+      shape1, scale1, shape2, scale2, n1, n2
     ))
   }
 
   if (!all(is.finite(emp_est)) || !all(is.finite(ust_est))) {
     stop(sprintf(
-      "A non-finite empirical or U-statistic estimate was produced for lambda1=%g, lambda2=%g, n1=%d, n2=%d.",
-      lambda1, lambda2, n1, n2
+      paste0(
+        "A non-finite empirical or U-statistic estimate was produced for ",
+        "shape1=%g, scale1=%g, shape2=%g, scale2=%g, n1=%d, n2=%d."
+      ),
+      shape1, scale1, shape2, scale2, n1, n2
     ))
   }
   
@@ -246,13 +292,13 @@ simulate_one_cell <- function(lambda1, lambda2, n1, n2, iterations, gl,
 
 
 # =============================================================================
-# 8. simulation
+# 8.full Weibull simulation
 # =============================================================================
 
 run_simulation <- function(
     iterations = 2000,
     n_quad = 80,
-    seed = 2026,
+    seed = 2024,
     verbose = TRUE
 ) {
   if (length(iterations) != 1L || !is.numeric(iterations) ||
@@ -289,13 +335,18 @@ run_simulation <- function(
   gl <- gauss_legendre(n_quad)
   gl_check <- gauss_legendre(2L * n_quad)
   
+  # Parameter grid:
+  # c(shape1, scale1, shape2, scale2)
+  #
+  # This grid includes both shape differences and scale differences.
+  # That is important. A Weibull simulation that changes only scale is weak.
   param_grid <- list(
-    c(0.5, 0.1),
-    c(0.1, 0.5),
-    c(0.1, 1.0),
-    c(1.0, 0.5),
-    c(2.0, 5.0),
-    c(10.0, 5.0)
+    c(0.5, 1.0, 1.0, 1.0),
+    c(1.0, 1.0, 2.0, 1.0),
+    c(1.5, 1.0, 3.0, 1.0),
+    c(2.0, 1.0, 2.0, 2.0),
+    c(0.7, 2.0, 1.5, 1.0),
+    c(3.0, 1.0, 1.2, 2.0)
   )
   
   n1_vec <- c(5,  10, 20, 20, 40, 30, 50)
@@ -305,15 +356,18 @@ run_simulation <- function(
   idx <- 1L
   
   for (p in seq_along(param_grid)) {
-    lambda1 <- param_grid[[p]][1]
-    lambda2 <- param_grid[[p]][2]
-    true_D <- true_D_exp(lambda1, lambda2)
+    shape1 <- param_grid[[p]][1]
+    scale1 <- param_grid[[p]][2]
+    shape2 <- param_grid[[p]][3]
+    scale2 <- param_grid[[p]][4]
+    
+    true_D <- true_D_weibull(shape1, scale1, shape2, scale2)
     
     if (verbose) {
       cat("\n============================================================\n")
       cat(sprintf(
-        "lambda1 = %.3f, lambda2 = %.3f, true D = %.8f\n",
-        lambda1, lambda2, true_D
+        "Weibull 1: shape = %.3f, scale = %.3f | Weibull 2: shape = %.3f, scale = %.3f | true D = %.8f\n",
+        shape1, scale1, shape2, scale2, true_D
       ))
       cat("============================================================\n")
     }
@@ -327,8 +381,10 @@ run_simulation <- function(
       }
       
       sim <- simulate_one_cell(
-        lambda1 = lambda1,
-        lambda2 = lambda2,
+        shape1 = shape1,
+        scale1 = scale1,
+        shape2 = shape2,
+        scale2 = scale2,
         n1 = n1,
         n2 = n2,
         iterations = iterations,
@@ -337,8 +393,10 @@ run_simulation <- function(
       )
       
       out[[idx]] <- data.frame(
-        lambda1 = lambda1,
-        lambda2 = lambda2,
+        shape1 = shape1,
+        scale1 = scale1,
+        shape2 = shape2,
+        scale2 = scale2,
         true_D = true_D,
         n1 = n1,
         n2 = n2,
@@ -368,22 +426,29 @@ run_simulation <- function(
 
 
 # =============================================================================
-# 9.table output
+# 9. tables
 # =============================================================================
 
 print_results_by_parameter <- function(results, digits_mse = 4, digits_rel = 4) {
-  param_pairs <- unique(results[, c("lambda1", "lambda2")])
+  param_sets <- unique(results[, c("shape1", "scale1", "shape2", "scale2")])
   
-  for (i in seq_len(nrow(param_pairs))) {
-    l1 <- param_pairs$lambda1[i]
-    l2 <- param_pairs$lambda2[i]
+  for (i in seq_len(nrow(param_sets))) {
+    sh1 <- param_sets$shape1[i]
+    sc1 <- param_sets$scale1[i]
+    sh2 <- param_sets$shape2[i]
+    sc2 <- param_sets$scale2[i]
     
-    sub <- results[results$lambda1 == l1 & results$lambda2 == l2, ]
+    sub <- results[
+      results$shape1 == sh1 &
+        results$scale1 == sc1 &
+        results$shape2 == sh2 &
+        results$scale2 == sc2,
+    ]
     
     cat("\n============================================================\n")
     cat(sprintf(
-      "(lambda1, lambda2) = (%.3f, %.3f), true D = %.8f\n",
-      l1, l2, sub$true_D[1]
+      "Weibull 1: shape = %.3f, scale = %.3f | Weibull 2: shape = %.3f, scale = %.3f | true D = %.8f\n",
+      sh1, sc1, sh2, sc2, sub$true_D[1]
     ))
     cat("============================================================\n")
     
@@ -406,10 +471,20 @@ print_results_by_parameter <- function(results, digits_mse = 4, digits_rel = 4) 
       Ustat = round(sub$RelMSE_Ustat, digits_rel)
     )
     print(rel_tab, row.names = FALSE)
+    
+    if (any(sub$Kernel_NA_Count > 0)) {
+      cat("\nWarning: Some kernel estimates returned NA.\n")
+      print(
+        data.frame(
+          n1 = sub$n1,
+          n2 = sub$n2,
+          Kernel_NA_Count = sub$Kernel_NA_Count
+        ),
+        row.names = FALSE
+      )
+    }
   }
 }
-
-
 
 
 # =============================================================================
@@ -480,7 +555,7 @@ prepare_output_dir <- function(path) {
 # EXTROPY_N_QUAD=160 provides a direct quadrature-sensitivity check.
 mc_reps <- read_env_integer("EXTROPY_MC_REPS", 2000L, 1L)
 quadrature_nodes <- read_env_integer("EXTROPY_N_QUAD", 80L, 2L)
-simulation_seed <- read_env_integer("EXTROPY_SEED", 2026L, 0L)
+simulation_seed <- read_env_integer("EXTROPY_SEED", 2024L, 0L)
 show_progress <- read_env_flag("EXTROPY_VERBOSE", TRUE)
 output_dir <- prepare_output_dir(
   Sys.getenv("EXTROPY_OUTPUT_DIR", unset = ".")
@@ -491,7 +566,7 @@ output_dir <- prepare_output_dir(
 # 11. Run simulation
 # =============================================================================
 
-results <- run_simulation(
+results_weibull <- run_simulation(
   iterations = mc_reps,
   n_quad = quadrature_nodes,
   seed = simulation_seed,
@@ -499,14 +574,18 @@ results <- run_simulation(
 )
 
 if (show_progress) {
-  print_results_by_parameter(results)
+  print_results_by_parameter(results_weibull)
 }
 
-output_file <- file.path(output_dir, "MSE_and_Relative_MSE_results.csv")
-write.csv(results, output_file, row.names = FALSE)
+write.csv(
+  results_weibull,
+  file.path(output_dir, "MSE_and_Relative_MSE_results_Weibull.csv"),
+  row.names = FALSE
+)
 
+output_file <- file.path(output_dir, "MSE_and_Relative_MSE_results_Weibull.csv")
 if (!file.exists(output_file)) {
   stop(sprintf("Expected output file was not created: %s", output_file))
 }
 
-message(sprintf("Wrote Table 3 simulation results to %s", output_file))
+message(sprintf("Wrote Table 4 simulation results to %s", output_file))

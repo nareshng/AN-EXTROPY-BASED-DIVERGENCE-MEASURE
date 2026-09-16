@@ -68,11 +68,24 @@ kern_surv_grid <- function(samples, x_grid, bw) {
 
 
 kern_dens_grid <- function(samples, x_grid, bw) {
-  colMeans(
-    dnorm(
-      outer(samples, x_grid, function(s, x) (x - s) / bw)
-    )
-  ) / bw
+  exp(kern_log_dens_grid(samples, x_grid, bw))
+}
+
+
+# Evaluate the Gaussian mixture in the log domain.  This is important for the
+# KL estimator: replacing small densities by a fixed positive constant changes
+# the estimand, whereas log-sum-exp evaluates the stated KDE without a floor.
+kern_log_dens_grid <- function(samples, x_grid, bw) {
+  z <- outer(samples, x_grid, function(s, x) (x - s) / bw)
+  log_components <- -0.5 * z^2 - log(bw) - 0.5 * log(2 * pi)
+  column_max <- apply(log_components, 2L, max)
+
+  column_max + log(colMeans(exp(sweep(
+    log_components,
+    2L,
+    column_max,
+    FUN = "-"
+  ))))
 }
 
 
@@ -85,8 +98,7 @@ calc_all_kernel <- function(
     Y,
     gl,
     upper = NULL,
-    tail_mult = 10,
-    eps = 1e-12
+    tail_mult = 10
 ) {
   h1 <- silverman_bw(X)
   h2 <- silverman_bw(Y)
@@ -111,8 +123,10 @@ calc_all_kernel <- function(
   Fb <- kern_surv_grid(X, x_grid, h1)
   Gb <- kern_surv_grid(Y, x_grid, h2)
   
-  f_hat <- kern_dens_grid(X, x_grid, h1)
-  g_hat <- kern_dens_grid(Y, x_grid, h2)
+  log_f_hat <- kern_log_dens_grid(X, x_grid, h1)
+  log_g_hat <- kern_log_dens_grid(Y, x_grid, h2)
+  f_hat <- exp(log_f_hat)
+  g_hat <- exp(log_g_hat)
   
   # D estimator
   D_hat <- sum(w_grid * (Fb - Gb)^2)
@@ -120,12 +134,9 @@ calc_all_kernel <- function(
   # D_CC estimator
   DCC_hat <- sum(w_grid * abs(Fb * g_hat - Gb * f_hat))
   
-  # KL estimator
-  # pmax avoids log(0).
-  f_safe <- pmax(f_hat, eps)
-  g_safe <- pmax(g_hat, eps)
-  
-  KL_hat <- sum(w_grid * f_safe * log(f_safe / g_safe))
+  # KL estimator.  log densities are evaluated by log-sum-exp above, so this
+  # is the KDE plug-in estimator in the paper, with no arbitrary density floor.
+  KL_hat <- sum(w_grid * f_hat * (log_f_hat - log_g_hat))
   
   c(
     D = D_hat,
@@ -267,8 +278,7 @@ simulate_one_cell <- function(
     n2,
     iterations,
     gl,
-    tail_mult = 10,
-    eps = 1e-12
+    tail_mult = 10
 ) {
   tD <- true_D_weibull(shape1, scale1, shape2, scale2)
   tDCC <- true_DCC_weibull(shape1, scale1, shape2, scale2)
@@ -278,13 +288,6 @@ simulate_one_cell <- function(
   DCC_est <- numeric(iterations)
   KL_est <- numeric(iterations)
   
-  # Deterministic high quantile for better tail coverage.
-  # This matters more for Weibull than for exponential, especially when shape < 1.
-  q_upper <- max(
-    qweibull(1 - 1e-12, shape = shape1, scale = scale1),
-    qweibull(1 - 1e-12, shape = shape2, scale = scale2)
-  )
-  
   for (b in seq_len(iterations)) {
     X <- rweibull(n1, shape = shape1, scale = scale1)
     Y <- rweibull(n2, shape = shape2, scale = scale2)
@@ -292,19 +295,19 @@ simulate_one_cell <- function(
     h1 <- silverman_bw(X)
     h2 <- silverman_bw(Y)
     
-    upper_b <- max(
-      q_upper,
-      max(c(X, Y)) + tail_mult * max(h1, h2),
-      na.rm = TRUE
-    )
+    # The integrands contain the sample KDEs, not the true Weibull densities.
+    # Their effective support ends a fixed number of bandwidths beyond the
+    # largest observation.  A theoretical extreme Weibull quantile can be
+    # hundreds of times larger and leaves almost no quadrature nodes where the
+    # KDE has mass, particularly when shape < 1.
+    upper_b <- max(c(X, Y)) + tail_mult * max(h1, h2)
     
     est <- calc_all_kernel(
       X = X,
       Y = Y,
       gl = gl,
       upper = upper_b,
-      tail_mult = tail_mult,
-      eps = eps
+      tail_mult = tail_mult
     )
     
     D_est[b] <- est["D"]
@@ -316,9 +319,19 @@ simulate_one_cell <- function(
   DCC_ok <- is.finite(DCC_est)
   KL_ok <- is.finite(KL_est)
   
-  MSE_D <- mean((D_est[D_ok] - tD)^2)
-  MSE_DCC <- mean((DCC_est[DCC_ok] - tDCC)^2)
-  MSE_KL <- mean((KL_est[KL_ok] - tKL)^2)
+  if (!all(D_ok) || !all(DCC_ok) || !all(KL_ok)) {
+    stop(sprintf(
+      paste0(
+        "Non-finite estimate(s) in simulation cell: ",
+        "D=%d, D_CC=%d, KL=%d. No replication was discarded."
+      ),
+      sum(!D_ok), sum(!DCC_ok), sum(!KL_ok)
+    ))
+  }
+
+  MSE_D <- mean((D_est - tD)^2)
+  MSE_DCC <- mean((DCC_est - tDCC)^2)
+  MSE_KL <- mean((KL_est - tKL)^2)
   
   c(
     true_D = tD,
@@ -346,12 +359,12 @@ simulate_one_cell <- function(
 
 run_simulation <- function(
     iterations = 2000,
-    n_quad = 100,
+    n_quad = 200,
     tail_mult = 10,
-    eps = 1e-12,
     seed = 2024,
     verbose = TRUE
 ) {
+  RNGkind("Mersenne-Twister", "Inversion", "Rejection")
   set.seed(seed)
   
   gl <- gauss_legendre(n_quad)
@@ -412,8 +425,7 @@ run_simulation <- function(
         n2 = n2,
         iterations = iterations,
         gl = gl,
-        tail_mult = tail_mult,
-        eps = eps
+        tail_mult = tail_mult
       )
       
       out[[idx]] <- data.frame(
@@ -528,56 +540,131 @@ print_results_by_parameter <- function(
 
 
 # =============================================================================
-# 9. Run main Weibull simulation
+# 9. Reproducible run interface
 # =============================================================================
 
-
-# =============================================================================
-# Output location
-# =============================================================================
-#   Rscript Sim_RelativeMSE_comparison_Weibull_dist.R [--output-dir=DIR]
-# The Monte Carlo settings (replications, seed, quadrature order) are fixed in
-# the run_simulation() call below and are what Table 2 of the paper uses.
-
-unc_output_dir <- local({
-  a <- commandArgs(trailingOnly = TRUE)
-  a <- a[startsWith(a, "--output-dir=")]
-  d <- if (length(a)) sub("^--output-dir=", "", a[[1L]]) else "."
-  if (!dir.exists(d) && !dir.create(d, recursive = TRUE, showWarnings = FALSE)) {
-    stop("Could not create output directory: ", d, call. = FALSE)
+read_env_integer <- function(name, default, minimum = 1L) {
+  value <- Sys.getenv(name, unset = "")
+  if (!nzchar(value)) {
+    return(as.integer(default))
   }
-  d
-})
 
-## Replication count. The default is what the paper's table uses; --quick and
-## --iterations= only exist so the script can be smoke-tested quickly.
-unc_iterations <- local({
-  a <- commandArgs(trailingOnly = TRUE)
-  it <- a[startsWith(a, "--iterations=")]
-  if (length(it)) {
-    n <- suppressWarnings(as.integer(sub("^--iterations=", "", it[[1L]])))
-    if (!is.finite(n) || n < 1L) stop("--iterations must be a positive integer.", call. = FALSE)
-    n
-  } else if ("--quick" %in% a) {
-    50L
-  } else {
-    2000L
+  parsed <- suppressWarnings(as.numeric(value))
+  if (!is.finite(parsed) || parsed != floor(parsed) ||
+      parsed < minimum || parsed > .Machine$integer.max) {
+    stop(sprintf(
+      "%s must be an integer between %d and %d.",
+      name, minimum, .Machine$integer.max
+    ))
   }
-})
+
+  as.integer(parsed)
+}
+
+
+read_env_flag <- function(name, default = FALSE) {
+  value <- trimws(tolower(Sys.getenv(name, unset = "")))
+  if (!nzchar(value)) {
+    return(default)
+  }
+  if (value %in% c("1", "true", "t", "yes", "y")) {
+    return(TRUE)
+  }
+  if (value %in% c("0", "false", "f", "no", "n")) {
+    return(FALSE)
+  }
+  stop(sprintf("%s must be TRUE or FALSE.", name))
+}
+
+
+mc_reps <- read_env_integer("EXTROPY_MC_REPS", 2000L)
+paper_seed <- read_env_integer("EXTROPY_SEED", 2024L, minimum = 0L)
+n_quad <- read_env_integer("EXTROPY_N_QUAD", 200L, minimum = 2L)
+verbose <- read_env_flag("EXTROPY_VERBOSE", TRUE)
+run_quad_check <- read_env_flag("EXTROPY_QUAD_CHECK", FALSE)
+output_dir <- Sys.getenv("EXTROPY_OUTPUT_DIR", unset = ".")
+
+if (!nzchar(output_dir)) {
+  stop("EXTROPY_OUTPUT_DIR must not be empty.")
+}
+if (!dir.exists(output_dir) &&
+    !dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)) {
+  stop(sprintf("Could not create output directory: %s", output_dir))
+}
+
+if (verbose) {
+  cat(sprintf(
+    "Table 2 configuration: B=%d, seed=%d, Gauss-Legendre nodes=%d\n",
+    mc_reps, paper_seed, n_quad
+  ))
+}
 
 results_weibull <- run_simulation(
-  iterations = unc_iterations,
-  n_quad = 100,
+  iterations = mc_reps,
+  n_quad = n_quad,
   tail_mult = 10,
-  eps = 1e-12,
-  seed = 2024,
-  verbose = TRUE
+  seed = paper_seed,
+  verbose = verbose
 )
 
-print_results_by_parameter(results_weibull)
+if (verbose) {
+  print_results_by_parameter(results_weibull)
+}
 
-out_path <- file.path(unc_output_dir, "Table2_RelMSE_Weibull.csv")
-write.csv(results_weibull, out_path, row.names = FALSE)
-message("Wrote ", normalizePath(out_path, mustWork = TRUE))
+write.csv(
+  results_weibull,
+  file.path(
+    output_dir,
+    "MSE_and_Relative_MSE_Section_5_1_Weibull.csv"
+  ),
+  row.names = FALSE
+)
 
 
+# =============================================================================
+# 10. Optional same-sample quadrature sensitivity check
+# =============================================================================
+
+# Set EXTROPY_QUAD_CHECK=TRUE to repeat the simulation with a finer rule.
+# run_simulation() resets the identical RNG kind and seed, so every coarse/fine
+# comparison uses exactly the same Monte Carlo samples.
+if (run_quad_check) {
+  fine_n_quad <- max(n_quad + 100L, as.integer(ceiling(1.5 * n_quad)))
+
+  results_weibull_fine <- run_simulation(
+    iterations = mc_reps,
+    n_quad = fine_n_quad,
+    tail_mult = 10,
+    seed = paper_seed,
+    verbose = FALSE
+  )
+
+  check_quad <- data.frame(
+    shape1 = results_weibull$shape1,
+    scale1 = results_weibull$scale1,
+    shape2 = results_weibull$shape2,
+    scale2 = results_weibull$scale2,
+    n1 = results_weibull$n1,
+    n2 = results_weibull$n2,
+    n_quad_coarse = n_quad,
+    n_quad_fine = fine_n_quad,
+    Diff_RelMSE_D = abs(
+      results_weibull$RelMSE_D - results_weibull_fine$RelMSE_D
+    ),
+    Diff_RelMSE_DCC = abs(
+      results_weibull$RelMSE_DCC - results_weibull_fine$RelMSE_DCC
+    ),
+    Diff_RelMSE_KL = abs(
+      results_weibull$RelMSE_KL - results_weibull_fine$RelMSE_KL
+    )
+  )
+
+  if (verbose) {
+    print(check_quad)
+  }
+  write.csv(
+    check_quad,
+    file.path(output_dir, "Quadrature_Check_Section_5_1_Weibull.csv"),
+    row.names = FALSE
+  )
+}
