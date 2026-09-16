@@ -107,13 +107,7 @@ Each table runs in a clean R process with 2000 Monte Carlo replications. Outputs
 | 5 | CP and AL of JEL, NA and empirical intervals (exponential) | `Sim_Confidence_Intervals_Exponential_dist.R` | 2026 | – |
 | 6 | Same, Weibull | `Sim_Confidence_Intervals_Weibull_dist.R` | 2026 | – |
 
-Notes:
 
-* The JEL interval uses the jackknife pseudo-values of Jing, Yuan and Zhou (2009, *JASA* 104, 1224–1232) for two-sample U-statistics, with the leave-one-out statistic evaluated with the full-sample normalising constants and centred at E[V_k] from their eq. (14) (manuscript eq. 3.8).
-* The KL kernel estimator bounds the density estimates below by 10⁻¹², as stated in Section 5.1.
-* Parameterisation: exponential λ is a **rate** (`rexp(rate = λ)`); Weibull (k, λ) is (**shape**, **scale**) (`rweibull(shape = k, scale = λ)`).
-* On Windows, run the individual scripts with the environment variables `EXTROPY_MC_REPS`, `EXTROPY_SEED` and `EXTROPY_OUTPUT_DIR` set, because `system2(env = …)` in the runner is not supported for `Rscript` on Windows. Example (PowerShell):
-  `$env:EXTROPY_MC_REPS=2000; $env:EXTROPY_SEED=2026; Rscript Sim_Confidence_Intervals_Weibull_dist.R`
 
 ### Tables 7–10 (Section 5.4, right censoring)
 
@@ -211,7 +205,7 @@ Random-number settings are fixed explicitly (`RNGkind("Mersenne-Twister", "Inver
 @article{GargDewanKattumannil,
   author  = {Garg, Naresh and Dewan, Isha and Kattumannil, Sudheesh Kumar},
   title   = {Nonparametric Inference for an Extropy-Based Divergence Measure},
-  journal = {Biometrical Journal},
+  journal = {--},
   note    = {Under revision}
 }
 ```
