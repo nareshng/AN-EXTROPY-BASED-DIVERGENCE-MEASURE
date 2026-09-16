@@ -27,8 +27,7 @@ The runner stops if a different `emplik` version is used and warns if R differs
 from 4.6.1. It records the actual versions in `run_manifest.csv` and
 `sessionInfo.txt`. The validator, all six quick simulations, output checks, and
 the two-run determinism test were executed successfully with R 4.6.1 and
-`emplik` 1.3-3. The full 2,000-replication manuscript run is still required to
-regenerate the numerical table entries.
+`emplik` 1.3-3.
 
 ## Validate the source files
 
