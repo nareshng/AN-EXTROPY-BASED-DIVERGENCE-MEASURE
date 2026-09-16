@@ -387,8 +387,42 @@ print_results_by_parameter <- function(
 # 9. Run
 # =============================================================================
 
+
+# =============================================================================
+# Output location
+# =============================================================================
+#   Rscript Sim_RelativeMSE_comparison_Exponential_dist.R [--output-dir=DIR]
+# The Monte Carlo settings (replications, seed, quadrature order) are fixed in
+# the run_simulation() call below and are what Table 1 of the paper uses.
+
+unc_output_dir <- local({
+  a <- commandArgs(trailingOnly = TRUE)
+  a <- a[startsWith(a, "--output-dir=")]
+  d <- if (length(a)) sub("^--output-dir=", "", a[[1L]]) else "."
+  if (!dir.exists(d) && !dir.create(d, recursive = TRUE, showWarnings = FALSE)) {
+    stop("Could not create output directory: ", d, call. = FALSE)
+  }
+  d
+})
+
+## Replication count. The default is what the paper's table uses; --quick and
+## --iterations= only exist so the script can be smoke-tested quickly.
+unc_iterations <- local({
+  a <- commandArgs(trailingOnly = TRUE)
+  it <- a[startsWith(a, "--iterations=")]
+  if (length(it)) {
+    n <- suppressWarnings(as.integer(sub("^--iterations=", "", it[[1L]])))
+    if (!is.finite(n) || n < 1L) stop("--iterations must be a positive integer.", call. = FALSE)
+    n
+  } else if ("--quick" %in% a) {
+    50L
+  } else {
+    2000L
+  }
+})
+
 results <- run_simulation(
-  iterations = 2000,
+  iterations = unc_iterations,
   n_quad = 100,
   tail_mult = 10,
   eps = 1e-12,
@@ -398,11 +432,9 @@ results <- run_simulation(
 
 print_results_by_parameter(results)
 
-write.csv(
-  results,
-  "MSE_and_Relative_MSE_Section_5_1.csv",
-  row.names = FALSE
-)
+out_path <- file.path(unc_output_dir, "Table1_RelMSE_Exponential.csv")
+write.csv(results, out_path, row.names = FALSE)
+message("Wrote ", normalizePath(out_path, mustWork = TRUE))
 
 
 
@@ -410,44 +442,47 @@ write.csv(
 
 
 # =============================================================================
-# 10.quadrature sensitivity check
+# 10. Quadrature sensitivity check (opt in with --quadrature-check)
 # =============================================================================
+#
+# Re-runs the whole grid at two quadrature orders and reports the largest
+# absolute change in each mean squared error.  It roughly triples the runtime,
+# so it is off by default.
 
-# If n_quad = 200 and n_quad = 300 differ materially, use the larger value.
+if ("--quadrature-check" %in% commandArgs(trailingOnly = TRUE)) {
 
- results_100 <- run_simulation(
-   iterations = 2000,
-   n_quad = 200,
-   tail_mult = 10,
-   seed = 2024,
-   verbose = FALSE
- )
+  results_200 <- run_simulation(
+    iterations = unc_iterations,
+    n_quad = 200,
+    tail_mult = 10,
+    seed = 2024,
+    verbose = FALSE
+  )
 
- results_200 <- run_simulation(
-   iterations = 2000,
-   n_quad = 300,
-   tail_mult = 10,
-   seed = 2026,
-   verbose = FALSE
- )
+  results_300 <- run_simulation(
+    iterations = unc_iterations,
+    n_quad = 300,
+    tail_mult = 10,
+    seed = 2024,
+    verbose = FALSE
+  )
 
-check_quad <- data.frame(
-   lambda1 = results_100$lambda1,
-   lambda2 = results_100$lambda2,
-   n1 = results_100$n1,
-   n2 = results_100$n2,
+  check_quad <- data.frame(
+    lambda1 = results_200$lambda1,
+    lambda2 = results_200$lambda2,
+    n1 = results_200$n1,
+    n2 = results_200$n2,
+    Diff_MSE_D = abs(results_200$MSE_D - results_300$MSE_D),
+    Diff_MSE_DCC = abs(results_200$MSE_DCC - results_300$MSE_DCC),
+    Diff_MSE_KL = abs(results_200$MSE_KL - results_300$MSE_KL)
+  )
 
-   Diff_MSE_D = abs(results_100$MSE_D - results_150$MSE_D),
-   Diff_MSE_DCC = abs(results_100$MSE_DCC - results_150$MSE_DCC),
-   Diff_MSE_KL = abs(results_100$MSE_KL - results_150$MSE_KL)
- )
-
- print(check_quad)
- 
- 
- 
-
-
-
-
-
+  cat("\nLargest absolute change between n_quad = 200 and n_quad = 300:\n")
+  print(
+    c(
+      D = max(check_quad$Diff_MSE_D),
+      DCC = max(check_quad$Diff_MSE_DCC),
+      KL = max(check_quad$Diff_MSE_KL)
+    )
+  )
+}

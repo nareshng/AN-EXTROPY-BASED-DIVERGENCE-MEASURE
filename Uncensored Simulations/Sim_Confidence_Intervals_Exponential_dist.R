@@ -1,6 +1,6 @@
 # =============================================================================
 # Section 5.3 – Coverage Probability and Average Length
-# for FOUR confidence interval methods under Weibull distributions:
+# for FOUR confidence interval methods under exponential distributions:
 #
 #   1. U-statistic + JEL
 #   2. U-statistic + Normal approximation
@@ -8,11 +8,15 @@
 #   4. Kernel estimator + Bootstrap
 #
 # Model:
-#   X ~ Weibull(shape1, scale1)
-#   Y ~ Weibull(shape2, scale2)
+#   X ~ Exp(lambda1)
+#   Y ~ Exp(lambda2)
 #
 #
 #
+# True value:
+#   D = 1/(2 lambda1) + 1/(2 lambda2) - 2/(lambda1 + lambda2)
+#
+# 
 # =============================================================================
 
 
@@ -36,41 +40,15 @@ local({
 
 
 # =============================================================================
-# 1. True divergence for Weibull distributions
+# 1. True divergence for exponential distributions
 # =============================================================================
 
-true_D_weibull <- function(shape1, scale1, shape2, scale2) {
-  if (shape1 <= 0 || shape2 <= 0 || scale1 <= 0 || scale2 <= 0) {
-    stop("All Weibull shape and scale parameters must be positive.")
+true_D_exp <- function(lambda1, lambda2) {
+  if (lambda1 <= 0 || lambda2 <= 0) {
+    stop("lambda1 and lambda2 must be positive.")
   }
   
-  # integral_0^inf S_X(x)^2 dx
-  term1 <- scale1 * gamma(1 + 1 / shape1) / (2^(1 / shape1))
-  
-  # integral_0^inf S_Y(x)^2 dx
-  term2 <- scale2 * gamma(1 + 1 / shape2) / (2^(1 / shape2))
-  
-  # integral_0^inf S_X(x) S_Y(x) dx
-  # Closed form only when shape1 == shape2.
-  if (abs(shape1 - shape2) < 1e-12) {
-    shape <- shape1
-    c_cross <- scale1^(-shape) + scale2^(-shape)
-    cross <- gamma(1 + 1 / shape) / (c_cross^(1 / shape))
-  } else {
-    cross_integrand <- function(x) {
-      exp(- (x / scale1)^shape1 - (x / scale2)^shape2)
-    }
-    
-    cross <- integrate(
-      cross_integrand,
-      lower = 0,
-      upper = Inf,
-      rel.tol = 1e-10,
-      subdivisions = 1000
-    )$value
-  }
-  
-  term1 + term2 - 2 * cross
+  1 / (2 * lambda1) + 1 / (2 * lambda2) - 2 / (lambda1 + lambda2)
 }
 
 
@@ -113,7 +91,7 @@ trapz <- function(x, y) {
 
 
 # =============================================================================
-# 4. Shared O(n log n) components
+# 4. components
 # =============================================================================
 
 shared_components <- function(X, Y) {
@@ -271,7 +249,7 @@ jel_ci <- function(V, n1, n2, alpha = 0.05) {
     return(c(lb = NA_real_, ub = NA_real_))
   }
   
-  # Upper endpoint
+  
   u_hi <- max(D_hat + step, step)
   found_hi <- FALSE
   
@@ -299,9 +277,8 @@ jel_ci <- function(V, n1, n2, alpha = 0.05) {
       error = function(e) NA_real_
     )
   }
+
   
-  # Lower endpoint
-  # D is nonnegative. If 0 is inside the JEL confidence set, use 0.
   val_zero <- neg2llr(0, V, n1, n2)
   
   if (is.finite(val_zero) && val_zero <= chi_crit) {
@@ -347,7 +324,7 @@ jel_ci <- function(V, n1, n2, alpha = 0.05) {
 
 
 # =============================================================================
-# 8. Kernel estimator 
+# 8. kernel estimator
 # =============================================================================
 
 make_kernel_object <- function(
@@ -408,7 +385,7 @@ kernel_D_from_object <- function(obj, idxX = NULL, idxY = NULL) {
 
 
 # =============================================================================
-# 9. Kernel bootstrap CI
+# 9. kernel bootstrap CI
 # =============================================================================
 
 kernel_bootstrap_ci_fast <- function(
@@ -482,7 +459,7 @@ kernel_bootstrap_ci_fast <- function(
 
 
 # =============================================================================
-# 10. Confidence intervals for one sample pair
+# 10. Confidence intervals for one sample
 # =============================================================================
 
 all_CIs <- function(
@@ -502,6 +479,9 @@ all_CIs <- function(
   sc <- shared_components(X, Y)
   loo <- loo_estimates(sc)
   
+  
+  # Pseudo-values
+  
   # U-statistic pseudo-values for JEL
   V_JEL_X <- n * sc$D_Ustat - (n - 1) * loo$D_Ustat_loo_X
   V_JEL_Y <- n * sc$D_Ustat - (n - 1) * loo$D_Ustat_loo_Y
@@ -515,7 +495,9 @@ all_CIs <- function(
   V_Emp_X <- n1 * sc$D_Emp - (n1 - 1) * loo$D_Emp_loo_X
   V_Emp_Y <- n2 * sc$D_Emp - (n2 - 1) * loo$D_Emp_loo_Y
   
+  
   # CI 1: U-statistic + JEL
+  
   ci_JEL <- jel_ci(V_JEL, n1, n2, alpha)
   
   if (all(is.finite(ci_JEL))) {
@@ -529,7 +511,10 @@ all_CIs <- function(
     al_JEL <- NA_real_
   }
   
+  # ---------------------------------------------------------------------------
   # CI 2: U-statistic + Normal approximation
+  # ---------------------------------------------------------------------------
+  
   sigma2_NA <- stats::var(V_NA_X) / n1 + stats::var(V_NA_Y) / n2
   
   if (is.finite(sigma2_NA) && sigma2_NA >= 0) {
@@ -545,7 +530,10 @@ all_CIs <- function(
     al_NA <- NA_real_
   }
   
+  # ---------------------------------------------------------------------------
   # CI 3: Empirical estimator + Normal approximation
+  # ---------------------------------------------------------------------------
+  
   sigma2_Emp <- stats::var(V_Emp_X) / n1 + stats::var(V_Emp_Y) / n2
   
   if (is.finite(sigma2_Emp) && sigma2_Emp >= 0) {
@@ -561,7 +549,10 @@ all_CIs <- function(
     al_Emp <- NA_real_
   }
   
+  # ---------------------------------------------------------------------------
   # CI 4: Kernel estimator + bootstrap
+  # ---------------------------------------------------------------------------
+  
   ## Tables 5 and 6 report the JEL, normal-approximation and empirical intervals
   ## only.  The kernel bootstrap interval is roughly twenty times the cost of the
   ## other three put together, so it is computed only when it is asked for.
@@ -634,53 +625,42 @@ safe_cp <- function(success, valid) {
 
 
 # =============================================================================
-# 12. Simulation for Weibull distributions
+# 12. Simulation
 # =============================================================================
 
-## The simulation grid for Table 6.  run_coverage_simulation() is a thin wrapper
+## The simulation grid for Table 5.  run_coverage_simulation() is a thin wrapper
 ## over unc_run_coverage() in unc_simulation_engine.R, which seeds every
 ## replication individually so that the result of a cell is independent of the
 ## order in which cells are run and of the number of cores used.
 
-weibull_params_list <- function() {
-  list(
-    c(0.5, 1.0, 1.0, 1.0),
-    c(1.0, 1.0, 2.0, 1.0),
-    c(2.0, 1.0, 1.0, 1.0),
-    c(1.5, 1.0, 3.0, 1.5),
-    c(0.7, 2.0, 1.5, 1.0),
-    c(3.0, 1.0, 1.2, 2.0)
-  )
+exp_params_list <- function() {
+  list(c(0.2, 0.1), c(0.1, 0.5), c(1.0, 0.5), c(1.0, 2.0), c(10.0, 1.0))
 }
 
-weibull_sizes <- function() {
-  list(c(10L, 10L), c(30L, 40L), c(70L, 50L), c(100L, 100L))
+exp_sizes <- function() {
+  list(c(20L, 10L), c(30L, 40L), c(70L, 50L), c(100L, 100L))
 }
 
-run_coverage_simulation <- function(iterations = 2000L, B_boot = 199L,
+run_coverage_simulation <- function(iterations = 2000L, B_boot = 499L,
                                     grid_size = 400L, tail_mult = 8,
                                     alpha = 0.05, seed = 2026L, cores = 1L,
                                     verbose = TRUE, checkpoint_dir = NULL,
                                     cells_wanted = NULL, resume = TRUE,
                                     with_kernel = FALSE) {
   res <- unc_run_coverage(
-    params_list = weibull_params_list(),
-    sizes = weibull_sizes(),
-    draw = function(p, n1, n2) list(
-      X = stats::rweibull(n1, shape = p[1], scale = p[2]),
-      Y = stats::rweibull(n2, shape = p[3], scale = p[4])
-    ),
-    true_value = function(p) true_D_weibull(p[1], p[2], p[3], p[4]),
+    params_list = exp_params_list(),
+    sizes = exp_sizes(),
+    draw = function(p, n1, n2) list(X = stats::rexp(n1, rate = p[1]),
+                                    Y = stats::rexp(n2, rate = p[2])),
+    true_value = function(p) true_D_exp(p[1], p[2]),
     iterations = iterations, B_boot = B_boot, grid_size = grid_size,
     tail_mult = tail_mult, alpha = alpha, seed = seed, cores = cores,
     verbose = verbose, checkpoint_dir = checkpoint_dir,
     cells_wanted = cells_wanted, resume = resume, with_kernel = with_kernel
   )
   if (is.null(res)) return(NULL)
-  names(res)[names(res) == "par1"] <- "shape1"
-  names(res)[names(res) == "par2"] <- "scale1"
-  names(res)[names(res) == "par3"] <- "shape2"
-  names(res)[names(res) == "par4"] <- "scale2"
+  names(res)[names(res) == "par1"] <- "lambda1"
+  names(res)[names(res) == "par2"] <- "lambda2"
   res
 }
 
@@ -690,27 +670,23 @@ run_coverage_simulation <- function(iterations = 2000L, B_boot = 199L,
 # =============================================================================
 
 print_results_by_parameter <- function(results, digits_cp = 2, digits_al = 4) {
-  param_sets <- unique(results[, c("shape1", "scale1", "shape2", "scale2")])
+  param_pairs <- unique(results[, c("lambda1", "lambda2")])
   
-  for (i in seq_len(nrow(param_sets))) {
-    shape1 <- param_sets$shape1[i]
-    scale1 <- param_sets$scale1[i]
-    shape2 <- param_sets$shape2[i]
-    scale2 <- param_sets$scale2[i]
+  for (i in seq_len(nrow(param_pairs))) {
+    lambda1 <- param_pairs$lambda1[i]
+    lambda2 <- param_pairs$lambda2[i]
     
     sub <- results[
-      results$shape1 == shape1 &
-        results$scale1 == scale1 &
-        results$shape2 == shape2 &
-        results$scale2 == scale2,
+      results$lambda1 == lambda1 &
+        results$lambda2 == lambda2,
     ]
     
-    cat("\n", strrep("-", 110), "\n", sep = "")
+    cat("\n", strrep("-", 100), "\n", sep = "")
     cat(sprintf(
-      "Weibull 1: shape = %.3f, scale = %.3f | Weibull 2: shape = %.3f, scale = %.3f | true D = %.8f\n",
-      shape1, scale1, shape2, scale2, sub$true_D[1]
+      "(lambda1, lambda2) = (%.3f, %.3f), true D = %.8f\n",
+      lambda1, lambda2, sub$true_D[1]
     ))
-    cat(strrep("-", 110), "\n", sep = "")
+    cat(strrep("-", 100), "\n", sep = "")
     
     tab <- data.frame(
       n1 = sub$n1,
@@ -743,15 +719,15 @@ print_results_by_parameter <- function(results, digits_cp = 2, digits_al = 4) {
 # 14. Run
 # =============================================================================
 #
-#   Rscript Sim_Confidence_Intervals_Weibull_dist.R                       # Table 6, 2000 replications
-#   Rscript Sim_Confidence_Intervals_Weibull_dist.R --quick --cores=2     # software check only
-#   Rscript Sim_Confidence_Intervals_Weibull_dist.R --cores=4 --output-dir=results
+#   Rscript Sim_Confidence_Intervals_Exponential_dist.R                       # Table 5, 2000 replications
+#   Rscript Sim_Confidence_Intervals_Exponential_dist.R --quick --cores=2     # software check only
+#   Rscript Sim_Confidence_Intervals_Exponential_dist.R --cores=4 --output-dir=results
 #
 # Options: --iterations= --B-boot= --seed= --cores= --output-dir= --quick --quiet
 
 opt <- unc_parse_cli(
   commandArgs(trailingOnly = TRUE),
-  list(iterations = 2000L, B_boot = 199L, seed = 2026L, cores = 1L,
+  list(iterations = 2000L, B_boot = 499L, seed = 2026L, cores = 1L,
        output_dir = ".", verbose = TRUE,
        cells = NULL, resume = TRUE, with_kernel = FALSE)
 )
@@ -766,7 +742,7 @@ results_section_5_3 <- run_coverage_simulation(
   seed = opt$seed,
   cores = opt$cores,
   verbose = opt$verbose,
-  checkpoint_dir = file.path(opt$output_dir, "intermediate_wei"),
+  checkpoint_dir = file.path(opt$output_dir, "intermediate_exp"),
   cells_wanted = opt$cells,
   resume = opt$resume,
   with_kernel = opt$with_kernel
@@ -780,7 +756,7 @@ if (is.null(results_section_5_3)) {
 
 print_results_by_parameter(results_section_5_3)
 
-unc_write_csv(results_section_5_3, file.path(opt$output_dir, "Table6_CI_Weibull.csv"))
+unc_write_csv(results_section_5_3, file.path(opt$output_dir, "Table5_CI_Exponential.csv"))
 
 writeLines(
   c(
@@ -795,7 +771,7 @@ writeLines(
     sprintf("R version: %s", R.version.string),
     sprintf("RNG: %s", paste(unc_rng_signature(), collapse = "; "))
   ),
-  file.path(opt$output_dir, "Table6_run_settings.txt")
+  file.path(opt$output_dir, "Table5_run_settings.txt")
 )
 
-message("Wrote ", normalizePath(file.path(opt$output_dir, "Table6_CI_Weibull.csv"), mustWork = TRUE))
+message("Wrote ", normalizePath(file.path(opt$output_dir, "Table5_CI_Exponential.csv"), mustWork = TRUE))

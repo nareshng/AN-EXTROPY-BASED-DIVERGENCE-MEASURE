@@ -347,8 +347,42 @@ print_results_by_parameter <- function(results, digits_mse = 4, digits_rel = 4) 
 # 10. Run  simulation
 # =============================================================================
 
+
+# =============================================================================
+# Output location
+# =============================================================================
+#   Rscript Sim_MSE_Estimators_Exponential_dist.R [--output-dir=DIR]
+# The Monte Carlo settings (replications, seed, quadrature order) are fixed in
+# the run_simulation() call below and are what Table 3 of the paper uses.
+
+unc_output_dir <- local({
+  a <- commandArgs(trailingOnly = TRUE)
+  a <- a[startsWith(a, "--output-dir=")]
+  d <- if (length(a)) sub("^--output-dir=", "", a[[1L]]) else "."
+  if (!dir.exists(d) && !dir.create(d, recursive = TRUE, showWarnings = FALSE)) {
+    stop("Could not create output directory: ", d, call. = FALSE)
+  }
+  d
+})
+
+## Replication count. The default is what the paper's table uses; --quick and
+## --iterations= only exist so the script can be smoke-tested quickly.
+unc_iterations <- local({
+  a <- commandArgs(trailingOnly = TRUE)
+  it <- a[startsWith(a, "--iterations=")]
+  if (length(it)) {
+    n <- suppressWarnings(as.integer(sub("^--iterations=", "", it[[1L]])))
+    if (!is.finite(n) || n < 1L) stop("--iterations must be a positive integer.", call. = FALSE)
+    n
+  } else if ("--quick" %in% a) {
+    50L
+  } else {
+    2000L
+  }
+})
+
 results <- run_simulation(
-  iterations = 2000,
+  iterations = unc_iterations,
   n_quad = 80,
   seed = 2026,
   verbose = TRUE
@@ -356,6 +390,8 @@ results <- run_simulation(
 
 print_results_by_parameter(results)
 
-write.csv(results, "MSE_and_Relative_MSE_results.csv", row.names = FALSE)
+out_path <- file.path(unc_output_dir, "Table3_MSE_Exponential.csv")
+write.csv(results, out_path, row.names = FALSE)
+message("Wrote ", normalizePath(out_path, mustWork = TRUE))
 
 
