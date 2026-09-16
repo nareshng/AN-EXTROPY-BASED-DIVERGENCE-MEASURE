@@ -160,11 +160,11 @@ loo_estimates <- function(sc) {
 # 4. Expected pseudo-values for JEL
 # =============================================================================
 
-# Jing, Yuan and Zhou (2009, JASA, eq. 14) for a two-sample U-statistic with
+# For a two-sample U-statistic with
 # kernel degrees (m1, m2) = (2, 2), m = m1 + m2 = 4:
 #   E[V_k] = theta * n/(n - m) * [(n2 - 1) m1/n1 - (m2 - 1)],  k = 1, ..., n1
 #   E[V_k] = theta * n/(n - m) * [(n1 - 1) m2/n2 - (m1 - 1)],  k = n1 + 1, ..., n
-# This holds for the JYZ pseudo-values built in jyz_pseudo_values() below.
+
 EV_vec <- function(theta, n1, n2) {
   n <- n1 + n2
   
@@ -175,8 +175,7 @@ EV_vec <- function(theta, n1, n2) {
 }
 
 
-# JYZ (2009) pseudo-values V_i = n T_n - (n - 1) T_{n-1}^{(-i)}, where T is the
-# pooled-sample representation of the two-sample U-statistic (JYZ eq. 13) with
+
 # the full-sample normalising constants kept fixed. Evaluating T at the n - 1
 # remaining observations gives
 #   T_{n-1}^{(-i)} = n/(n - 4) * (n1 - 2)/n1 * U^{(-i)},  if W_i is an X,
