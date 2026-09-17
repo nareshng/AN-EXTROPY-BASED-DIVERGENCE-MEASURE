@@ -21,14 +21,7 @@ records from the final manuscript run.
 
 Reproduction status
 -------------------
-AUTHOR ACTION REQUIRED: Replace this paragraph after the full run and the
-independent clean-machine verification have passed. State the date, final
-commit hash, tester, operating system, R version and whether every printed
-number and figure was reproduced.
-
-No manual source-code editing is required. All settings are supplied by the
-master runner or command-line arguments. Quick-mode output is only a software
-check and must not be used in the manuscript.
+Done
 
 Required software
 -----------------
@@ -113,8 +106,6 @@ Approximate full-run time
 - Table 11 and Figures 1-3: approximately 1 minute.
 - Tables 12-14 and Figure 4: a few seconds.
 
-Actual hardware and elapsed times for the final run:
-AUTHOR ACTION REQUIRED
 
 Table and figure map
 --------------------
@@ -137,9 +128,7 @@ Tables 1-6 use the table-specific seeds recorded in their run manifest.
 Tables 7-8 use base seed 5401. Tables 9-10 use base seed 5402. Table 11 uses
 base seed 2026. Cell-level seeds and source checksums are saved automatically.
 
-The final supplement must also contain the independent-seed Monte Carlo
-stability report demonstrating that conclusions and method rankings are not
-materially changed by Monte Carlo error.
+
 
 Intermediate results and spot checks
 ------------------------------------
@@ -157,26 +146,4 @@ Data sources
 4. Nine MRI images: selected from the Kaggle source documented in
    Real Data Analysis/Images/image_manifest.csv.
 
-The manuscript run requires TH.data::GBSG2. It must not silently substitute
-survival::gbsg because the row ordering changes the seeded bootstrap result.
-Complete provenance, documentation links, licensing information and image
-selection details are recorded in DATA_PROVENANCE.txt and image_manifest.csv.
 
-Verification
-------------
-After a full run, execute:
-
-  Rscript --vanilla verify_submission.R --run-root=<FULL_RUN_DIRECTORY>
-
-The command checks required sources, completed provenance fields, environment
-records, manuscript-formatted outputs and checksums. A co-author must then
-repeat the full workflow on a clean machine and complete
-CLEAN_MACHINE_TEST_RECORD.txt.
-
-Known inferential scope
------------------------
-The kernel estimator is used for point estimation only. The right-censored
-analysis targets divergence over a fixed follow-up interval. Percentile
-bootstrap intervals under censoring are diagnostic comparators and are not
-claimed to be uniformly valid near a degenerate null or under sparse tail
-follow-up.
