@@ -1,8 +1,6 @@
 REPRODUCIBLE R ENVIRONMENT
 ==========================
 
-The final repository must contain a generated renv.lock. Do not hand-edit or
-invent this file.
 
 Reference versions currently stated by the project
 --------------------------------------------------
@@ -41,13 +39,8 @@ Procedure on the machine used for the final manuscript run
 
    renv::snapshot(type = "all")
 
-7. Commit renv.lock. Do not commit the local renv package cache.
-8. Test restoration in a fresh clone:
+7. Test restoration in a fresh clone:
 
    renv::restore()
    Rscript --vanilla capture_environment.R --strict --output-dir=environment_test
-
-9. If a listed historical package release is unavailable from the configured
-   repository, record the archive URL or Git commit in README.txt. Never replace
-   it silently with a newer version.
 
