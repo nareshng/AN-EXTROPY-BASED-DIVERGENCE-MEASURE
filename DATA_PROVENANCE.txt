@@ -1,0 +1,63 @@
+DATA PROVENANCE AND LICENSING RECORD
+====================================
+
+Complete every AUTHOR ACTION REQUIRED field before submission.
+
+1. Veteran lung cancer data
+---------------------------
+Analysis source: survival::veteran
+Documentation: Run help("veteran", package = "survival") in the pinned
+environment.
+Original study citation: Kalbfleisch and Prentice (1980), as cited in the
+manuscript.
+Package version used: survival 3.5-8
+Package/data license and redistribution terms: AUTHOR ACTION REQUIRED
+Variables used: treatment, survival time, status and analysis grouping.
+Data dictionary: Include or link the exact package documentation page.
+
+2. NCCTG lung cancer data
+-------------------------
+Analysis source: survival::lung
+Documentation: Run help("lung", package = "survival") in the pinned
+environment.
+Original study citation: Loprinzi et al. (1994), as cited in the manuscript.
+Package version used: survival 3.5-8
+Package/data license and redistribution terms: AUTHOR ACTION REQUIRED
+Variables used: survival time, status and sex.
+Data dictionary: Include or link the exact package documentation page.
+
+3. GBSG2 breast cancer data
+---------------------------
+Required analysis source: TH.data::GBSG2
+Documentation: Run help("GBSG2", package = "TH.data") in the pinned
+environment.
+Original study citation: Schumacher et al. (1994), as cited in the manuscript.
+Package version used: TH.data 1.1-2
+Package/data license and redistribution terms: AUTHOR ACTION REQUIRED
+Variables used: recurrence-free survival time, censoring status and hormonal
+therapy.
+Important: The manuscript run must stop when TH.data is absent. Do not silently
+substitute survival::gbsg because its row order changes seeded bootstrap output.
+
+4. MRI image data
+-----------------
+Stated source:
+https://www.kaggle.com/datasets/sartajbhuvaji/brain-tumor-classification-mri/data
+
+Files analysed: NT1.jpg-NT3.jpg, BT1.jpg-BT3.jpg and MT1.jpg-MT3.jpg.
+Required record: Real Data Analysis/Images/image_manifest.csv.
+
+For every image, the completed manifest must contain:
+- original filename or source record identifier;
+- native source class exactly as supplied by the dataset;
+- documented mapping to NT, BT or MT;
+- selection rule and who performed the selection;
+- source URL and retrieval date;
+- intellectual-property holder and license;
+- whether redistribution in the journal supplement is permitted;
+- MD5 checksum and original dimensions.
+
+The current renamed image files alone are insufficient to verify their source
+class or the benign/malignant relabelling. Do not make diagnostic or biological
+claims until this mapping has been documented and independently checked.
+

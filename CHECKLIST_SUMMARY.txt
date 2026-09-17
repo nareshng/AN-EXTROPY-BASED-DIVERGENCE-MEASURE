@@ -1,0 +1,59 @@
+BIOMETRICAL JOURNAL REPRODUCIBILITY CHECKLIST - PRACTICAL SUMMARY
+=================================================================
+
+What must be true before resubmission
+-------------------------------------
+1. A co-author must reproduce every submitted table, figure and reported
+   computational result from the supplement on a separate clean machine.
+2. Code, data, intermediate results, logs and a README must be supplied in one
+   ZIP file, unless oversized files are deposited in a stable external archive.
+3. The README must be TXT, HTML or PDF and must state exact software versions,
+   execution order, data provenance, licensing and the folder structure.
+4. Every random analysis must use recorded seeds. Independent-seed reruns must
+   also show that Monte Carlo error does not change substantive conclusions.
+5. Long simulations must include intermediate results and support fast spot
+   checks of selected settings without rerunning the complete study.
+
+What the code must do
+---------------------
+- Provide master scripts that iterate over settings and collect results.
+- Require no repeated manual edits or manual copying from console output.
+- Save manuscript-matching tables and figures under descriptive numbered names.
+- Separate reusable functions from analysis drivers.
+- Avoid duplicate, obsolete and commented-out code.
+- Avoid package installation, global-workspace deletion and absolute paths.
+- Use documented functions, consistent formatting and portable relative paths.
+
+What this project still needs
+-----------------------------
+- Generate and commit a genuine renv.lock from the final R environment.
+- Complete README.txt, DATA_PROVENANCE.txt and image_manifest.csv.
+- Run and archive the full Tables 1-14 and Figures 1-4 workflow.
+- Include checkpoints, replication-level output, logs, manifests and
+  sessionInfo() from the final run.
+- Perform an independent-seed Monte Carlo stability comparison.
+- Perform and document an independent clean-machine reproduction.
+- Remove or justify obsolete and duplicated code, especially the unused
+  Real Data Analysis/km_functions.R file.
+- Assemble and verify the single final submission ZIP.
+
+Files supplied in this update package
+-------------------------------------
+- README.txt: journal-compliant README template.
+- ENVIRONMENT_SETUP.txt: instructions for producing renv.lock.
+- DATA_PROVENANCE.txt: provenance and licensing record.
+- Images/image_manifest_TEMPLATE.csv: image-level provenance template with
+  existing filenames, checksums and dimensions already entered.
+- MANUSCRIPT_CODE_CROSSWALK.csv: maps every table and figure to its script.
+- REPRODUCIBILITY_CHECKLIST_STATUS.csv: item-by-item audit status.
+- CLEAN_MACHINE_TEST_RECORD.txt: independent reproduction form.
+- MONTE_CARLO_STABILITY_RECORD.txt: independent-seed assessment form.
+- INDEPENDENT_SEED_RUNS.txt: required seed-offset runner changes and commands.
+- run_all.R: one-command quick/full workflow.
+- capture_environment.R: package, platform and session-information capture.
+- make_manuscript_tables.R: exact numbered manuscript-output builder.
+- verify_submission.R: final automated completeness checks.
+- MANUSCRIPT_REVISIONS_REQUIRED.txt: manuscript and response-letter changes.
+
+Do not claim full reproducibility until all placeholders are completed and both
+the full run and clean-machine verification pass.

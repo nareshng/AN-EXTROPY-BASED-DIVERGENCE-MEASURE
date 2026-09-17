@@ -1,0 +1,64 @@
+MANUSCRIPT AND RESPONSE-LETTER UPDATES REQUIRED
+===============================================
+
+1. Data Availability Statement
+------------------------------
+Use the following wording only after the full and clean-machine runs pass:
+
+"The accompanying code and data supplement contains the source code, data,
+intermediate simulation results, logs, software-environment snapshot and
+instructions required to reproduce Tables 1-14 and Figures 1-4. The materials
+correspond to the archived repository version identified by the commit hash
+and DOI reported in the supplement README. All results were independently
+reproduced from a clean environment using the commands documented there."
+
+Until that verification is complete, replace "reproduces all" by "was used to
+generate". Do not claim full reproducibility prematurely.
+
+2. Reviewer response concerning Tables 9-10
+-------------------------------------------
+The current code and manuscript use sample-size pairs (30,40), (70,50) and
+(100,100). Delete any response-letter statement saying that sample sizes 200
+and 500 were added, unless the code, tables and manuscript are genuinely
+extended and rerun.
+
+Defensible current wording:
+
+"After correcting the implementation errors, the empirical coverage
+probabilities generally move toward the nominal level as the sample sizes
+increase. Remaining undercoverage in settings with a very small target or
+heavy censoring is now explicitly reported as a limitation."
+
+3. Table 11
+------------
+The manuscript truncates negative displayed normal lower limits at zero. The
+current generic formatted CSV does not. Use the Table_11_manuscript.csv created
+by make_manuscript_tables.R and verify it value by value against the manuscript.
+
+4. Tables 7-10 and 12-14
+------------------------
+Use the manuscript-formatted files created by make_manuscript_tables.R. Do not
+submit diagnostic columns as if they were printed-table columns. Retain the
+long and diagnostic files separately for audit purposes.
+
+5. MRI analysis
+---------------
+After completing image_manifest.csv, describe the exact native source labels,
+their mapping to NT/BT/MT, the image-selection rule and the license. If the
+benign/malignant mapping cannot be verified from source metadata, remove those
+labels and use the native dataset classes.
+
+The interpretation should remain descriptive. The analysis of nine selected
+images does not establish diagnostic discrimination, and flattening removes
+spatial information while treating dependent pixels as observations.
+
+6. Separate scientific issues still requiring attention
+--------------------------------------------------------
+- State the exact identity between the proposed quantity and one-half of the
+  squared univariate energy distance; do not call it an entirely new distance.
+- Replace the statement that jackknife pseudo-values are asymptotically
+  independent with the precise asymptotic-linear representation required by
+  the JEL theorem.
+- State that inference with a data-selected truncation point is conditional on
+  the selected value unless selection uncertainty is incorporated.
+

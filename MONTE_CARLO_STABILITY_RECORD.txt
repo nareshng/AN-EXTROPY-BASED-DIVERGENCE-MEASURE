@@ -1,0 +1,57 @@
+MONTE CARLO STABILITY RECORD
+============================
+
+Purpose
+-------
+The journal checklist requires evidence that Monte Carlo error does not alter
+the substantive conclusions. Repeating a run with the same seed proves
+determinism, not Monte Carlo stability. Complete this record using at least two
+independent seed sets.
+
+Prespecified comparison rule
+----------------------------
+- Coverage probability tolerance: AUTHOR ACTION REQUIRED
+- Relative-MSE tolerance: AUTHOR ACTION REQUIRED
+- Mean-squared-error tolerance: AUTHOR ACTION REQUIRED
+- Method-ranking criterion: AUTHOR ACTION REQUIRED
+
+Run A
+-----
+Commit hash: AUTHOR ACTION REQUIRED
+Seeds: AUTHOR ACTION REQUIRED
+Run directory: AUTHOR ACTION REQUIRED
+Manifest checksum: AUTHOR ACTION REQUIRED
+
+Run B
+-----
+Commit hash: AUTHOR ACTION REQUIRED
+Seeds: AUTHOR ACTION REQUIRED
+Run directory: AUTHOR ACTION REQUIRED
+Manifest checksum: AUTHOR ACTION REQUIRED
+
+Results
+-------
+Maximum absolute difference in reported coverage probabilities:
+AUTHOR ACTION REQUIRED
+
+Maximum relative difference in reported MSE or relative MSE:
+AUTHOR ACTION REQUIRED
+
+Number of cells in which the ordering of compared methods changed:
+AUTHOR ACTION REQUIRED
+
+Did any manuscript conclusion change? YES / NO
+If yes, revise the conclusion and describe the change:
+AUTHOR ACTION REQUIRED
+
+Supporting file
+---------------
+Add a CSV containing, for every table cell, the Run A estimate, Run B estimate,
+difference, Monte Carlo standard error where available, and pass/fail result.
+Filename: Monte_Carlo_Stability_Comparison.csv
+
+Certification
+-------------
+Name: AUTHOR ACTION REQUIRED
+Date: AUTHOR ACTION REQUIRED
+
