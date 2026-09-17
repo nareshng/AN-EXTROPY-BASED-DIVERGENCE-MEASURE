@@ -16,4 +16,4 @@
 "Figure 1","Real Data Analysis/Censored_Real_Data_Analysis.R","Veteran_KM_curve.pdf and Veteran_cumulative_divergence.pdf","Two separate panels","Archive as Figure_1a and Figure_1b and preserve manuscript assembly"
 "Figure 2","Real Data Analysis/Censored_Real_Data_Analysis.R","Lung_cancer_KM_curve.pdf and Lung_cancer_cumulative_divergence.pdf","Two separate panels","Archive as Figure_2a and Figure_2b and preserve manuscript assembly"
 "Figure 3","Real Data Analysis/Censored_Real_Data_Analysis.R","GBSG2_KM_curve.pdf and GBSG2_cumulative_divergence.pdf","Two separate panels","Archive as Figure_3a and Figure_3b and preserve manuscript assembly"
-"Figure 4","Real Data Analysis/Image_based_Real_Data_Analysis.R","image_data/Figure4_MRI_images.pdf","Mapped but provenance incomplete","Complete and validate image_manifest.csv"
+"Figure 4","Real Data Analysis/Image_based_Real_Data_Analysis.R","image_data/Figure4_MRI_images.pdf","Mapped","Complete and validate image_manifest.csv"
