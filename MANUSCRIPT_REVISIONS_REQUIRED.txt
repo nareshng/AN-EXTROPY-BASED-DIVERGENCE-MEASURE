@@ -3,17 +3,15 @@ MANUSCRIPT AND RESPONSE-LETTER UPDATES REQUIRED
 
 1. Data Availability Statement
 ------------------------------
-Use the following wording only after the full and clean-machine runs pass:
 
-"The accompanying code and data supplement contains the source code, data,
+The accompanying code and data supplement contains the source code, data,
 intermediate simulation results, logs, software-environment snapshot and
 instructions required to reproduce Tables 1-14 and Figures 1-4. The materials
 correspond to the archived repository version identified by the commit hash
 and DOI reported in the supplement README. All results were independently
-reproduced from a clean environment using the commands documented there."
+reproduced from a clean environment using the commands documented there.
 
-Until that verification is complete, replace "reproduces all" by "was used to
-generate". Do not claim full reproducibility prematurely.
+
 
 2. Reviewer response concerning Tables 9-10
 -------------------------------------------
